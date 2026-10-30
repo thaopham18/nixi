@@ -1,0 +1,32 @@
+# dependencies and build output (all rebuilt by npm ci / npm run build / npm run dist:*)
+node_modules/
+out/
+dist/
+native/out/
+*.tsbuildinfo
+coverage/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# local Claude Code settings (CLAUDE.md itself is meant to be shared)
+.claude/settings.local.json
+
+# never commit real user data: Nixi databases, local state, MobaXterm exports, keys
+*.nxdb
+*.ezdb
+*.bak
+nixi.local.json
+ezterm.local.json
+known_hosts.json
+MobaXterm.ini
+*.mxtsessions
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.env
+.env.*

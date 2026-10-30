@@ -1,0 +1,59 @@
+{
+  "name": "nixi",
+  "productName": "Nixi",
+  "version": "0.1.0",
+  "description": "MobaXterm-style remote client (SSH, SFTP, tunnels, macros) for macOS",
+  "main": "out/main/index.js",
+  "license": "MIT",
+  "author": "Thao Pham",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/build-native.mjs && electron-vite dev",
+    "build": "node scripts/build-native.mjs && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:mac:arm64": "npm install --no-save --force @lydell/node-pty-darwin-arm64@1.1.0 && npm run build && electron-builder --mac --arm64",
+    "dist:mac:x64": "npm install --no-save --force @lydell/node-pty-darwin-x64@1.1.0 && npm run build && electron-builder --mac --x64",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "ssh2": "^1.16.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@devolutions/iron-remote-desktop": "^0.11.0",
+    "@devolutions/iron-remote-desktop-rdp": "^0.7.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ssh2": "^1.15.1",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "playwright-core": "^1.49.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8",
+    "zustand": "^5.0.2"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.21.5": true,
+    "ssh2@1.17.0": true
+  }
+}

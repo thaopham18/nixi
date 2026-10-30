@@ -1,0 +1,35 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Both on Apple Silicon: the x64 .dmg is cross-built there (dist:mac:x64 installs the x64
+    # node-pty binary), as on a dev Mac. GitHub's Intel macos-13 runners are retired.
+    runs-on: macos-14
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # npm run build inside: also builds the native drag module (native/out, not in git)
+      - run: npm run dist:mac:${{ matrix.arch }} -- --publish never
+        env:
+          # Set CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID secrets to sign + notarize.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nixi-${{ matrix.arch }}
+          path: dist/*.dmg

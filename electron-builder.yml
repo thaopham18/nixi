@@ -1,0 +1,38 @@
+appId: com.nixi.app
+productName: Nixi
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - node_modules/@lydell/**
+# Chromium ships ~55 UI languages (≈40 MB on macOS); the app is English + Vietnamese.
+electronLanguages:
+  - en
+  - vi
+compression: maximum
+afterPack: scripts/after-pack.cjs
+afterAllArtifactBuild: scripts/dmg-lzma.cjs
+mac:
+  category: public.app-category.developer-tools
+  # build/icon.* come from build/icon.svg: npx electron scripts/make-icon.mjs
+  icon: build/icon.icns
+  # file-promise drags out of the SFTP list (scripts/build-native.mjs, universal binary)
+  extraResources:
+    - from: native/out/nixi_drag.node
+      to: nixi_drag.node
+  target:
+    - target: dmg
+  # Unsigned until an Apple Developer ID is configured (CSC_LINK / CSC_KEY_PASSWORD).
+  identity: null
+  hardenedRuntime: false
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  # no auto-update: skip the blockmap (dmg-lzma.cjs re-encodes the image anyway)
+  writeUpdateInfo: false
+win:
+  target: nsis
+  icon: build/icon.ico
+npmRebuild: false
