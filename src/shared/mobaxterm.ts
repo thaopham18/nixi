@@ -3,7 +3,7 @@ import type { Macro, MacroStep, Session } from './types'
 // MobaXterm stores sessions in MobaXterm.ini / *.mxtsessions:
 //   [Bookmarks] / [Bookmarks_N] sections, SubRep=Folder\Sub, ImgNum=41,
 //   Name=<lead>#<icon>#<g1 %-separated>#<g2 terminal settings>#<start mode>#<comment>#<tab color>
-// g1[0] is the session type: 0 SSH, 4 RDP (others are not supported here).
+// g1[0] is the session type: 0 SSH, 1 Telnet, 4 RDP, 5 VNC (others are not supported here).
 // Format reference: https://gist.github.com/Ruzgfpegk/ab597838e4abbe8de30d7224afd062ea
 
 export interface MobaBookmark {
@@ -122,7 +122,7 @@ export interface MobaImport {
   unsupported: Record<string, number>
 }
 
-const typeNames: Record<number, string> = { 2: 'Rsh', 3: 'Xdmcp', 5: 'VNC', 6: 'FTP', 7: 'SFTP', 8: 'Serial', 9: 'File', 10: 'Shell', 11: 'Browser', 12: 'Mosh', 13: 'AWS S3', 14: 'WSL' }
+const typeNames: Record<number, string> = { 2: 'Rsh', 3: 'Xdmcp', 6: 'FTP', 7: 'SFTP', 8: 'Serial', 9: 'File', 10: 'Shell', 11: 'Browser', 12: 'Mosh', 13: 'AWS S3', 14: 'WSL' }
 
 function expandKeyPath(p: string, home: string): string | undefined {
   if (!p) return undefined
@@ -209,6 +209,17 @@ export function mobaToSessions(bookmarks: MobaBookmark[], newId: () => string, h
         port: Number(g[2]) || 3389,
         username,
         rdpDomain,
+        color: b.color
+      })
+    } else if (b.type === 5) {
+      // VNC: as with Telnet, only host and port are documented.
+      sessions.push({
+        id: newId(),
+        name: b.name,
+        type: 'vnc',
+        folder: base(b.folder),
+        host: g[1],
+        port: Number(g[2]) || 5900,
         color: b.color
       })
     } else {

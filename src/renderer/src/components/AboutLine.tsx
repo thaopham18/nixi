@@ -5,7 +5,7 @@ type Info = Awaited<ReturnType<typeof api.appInfo>>
 let cached: Info | undefined
 
 /**
- * Faded "v0.1.0 by Thao Pham" under the welcome buttons (the name is the heading right above).
+ * Faded "v0.2.0 by Thao Pham" under the welcome buttons (the name is the heading right above).
  * A click opens a small card with the details, each shown once; click outside or Esc closes it.
  */
 export function AboutLine({ className = '' }: { className?: string }): JSX.Element | null {

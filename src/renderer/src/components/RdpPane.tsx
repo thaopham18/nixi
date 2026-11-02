@@ -6,7 +6,7 @@ import { attachRdp, rdpUi, reconnectRdp, resizeRdp } from '../rdp'
 export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; header?: ReactNode }): JSX.Element {
   const { pane, visible, active } = props
   const host = useRef<HTMLDivElement>(null)
-  const error = useStore((s) => s.rdpErrors[pane.id])
+  const error = useStore((s) => s.paneErrors[pane.id])
   const fixedSize = useStore((s) => Boolean(s.sessions.find((x) => x.id === pane.sessionId)?.rdpWidth))
 
   // Connect on first mount; later mounts (pane moved to another split) re-attach the live session.
@@ -52,8 +52,11 @@ export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; 
         <button disabled={!connected} onClick={() => rdpUi(pane.id)?.metaKey()} title="Send the Windows key">
           ⊞ Win
         </button>
-        <button onClick={() => reconnectRdp(pane.id)}>Reconnect</button>
+        <button className="tb-medium" onClick={() => reconnectRdp(pane.id)}>
+          Reconnect
+        </button>
         <button
+          className="tb-wide"
           onClick={() => pane.sessionId && api.openRdpExternal(pane.sessionId).catch((e) => toast(errorMessage(e), true))}
           title="Open in the native client (Windows App / mstsc): smoother, hardware video decoding"
         >

@@ -5,8 +5,8 @@ import { uid } from './api'
 
 export interface Pane {
   id: string
-  /** terminal (default) or embedded RDP */
-  kind?: 'term' | 'rdp'
+  /** terminal (default), embedded RDP or VNC */
+  kind?: 'term' | 'rdp' | 'vnc'
   /** what to (re)connect to */
   sessionId?: string
   connId?: string
@@ -93,7 +93,8 @@ interface State {
   report?: { title: string; lines: string[] }
   /** tab or session being dragged, so tab views can offer split drop zones */
   dragging?: { kind: 'tab' | 'session'; id: string }
-  rdpErrors: Record<string, { text: string; detail?: string }>
+  /** why an RDP/VNC pane is not showing a session */
+  paneErrors: Record<string, { text: string; detail?: string }>
   /** latest resource stats per SSH connection; null = not available on that server */
   serverStats: Record<string, ServerStats | null>
   /** tabs (not the open one) whose terminals printed something since they were last open */
@@ -136,7 +137,7 @@ export const useStore = create<State>((set, get) => ({
   multiExecExcluded: {},
   recordingMacro: false,
   searchOpen: false,
-  rdpErrors: {},
+  paneErrors: {},
   serverStats: {},
   activity: {},
 

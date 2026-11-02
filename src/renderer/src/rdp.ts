@@ -58,10 +58,10 @@ const conns = new Map<string, RdpConn>()
 
 function setError(paneId: string, error?: { text: string; detail?: string }): void {
   useStore.setState((s) => {
-    const rdpErrors = { ...s.rdpErrors }
-    if (error) rdpErrors[paneId] = error
-    else delete rdpErrors[paneId]
-    return { rdpErrors }
+    const paneErrors = { ...s.paneErrors }
+    if (error) paneErrors[paneId] = error
+    else delete paneErrors[paneId]
+    return { paneErrors }
   })
 }
 

@@ -4,6 +4,7 @@ import { connectPane, createTerminal, fitPane, getEntry, repaintAll } from '../t
 import { closePane, openSessionInSplit } from '../actions'
 import { StatsBar } from './StatsBar'
 import { RdpPane } from './RdpPane'
+import { VncPane } from './VncPane'
 
 export function TabView({ tab, visible }: { tab: Tab; visible: boolean }): JSX.Element {
   const [zoomed, setZoomed] = useState<string>()
@@ -43,6 +44,8 @@ export function TabView({ tab, visible }: { tab: Tab; visible: boolean }): JSX.E
             >
               {p.kind === 'rdp' ? (
                 <RdpPane pane={p} visible={visible && !hidden} active={tab.activePaneId === p.id} header={header(p)} />
+              ) : p.kind === 'vnc' ? (
+                <VncPane pane={p} visible={visible && !hidden} active={tab.activePaneId === p.id} header={header(p)} />
               ) : (
                 <TerminalPane pane={p} tab={tab} visible={visible && !hidden} header={(extra) => header(p, extra)} />
               )}

@@ -190,7 +190,7 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
       req.rows
     )
   } else {
-    throw new Error('RDP sessions are opened with openRdp')
+    throw new Error('RDP and VNC sessions are not terminals')
   }
   if (session) touchSession(session.id)
   conns.set(id, conn)

@@ -26,6 +26,9 @@ import * as sftp from './ssh/sftp'
 import { saveTunnels, startTunnel, stopTunnel, tunnelStatuses } from './ssh/tunnels'
 import { openRdpExternal } from './rdp/rdp-file'
 import { issueTicket } from './rdp/proxy'
+import { issueVncTicket, openTcp } from './vnc/proxy'
+import { openVncThroughSsh, openVncExternal } from './vnc/target'
+import { verifyHostKey } from './store/known-hosts'
 import { exportMoba, importMoba, pickMobaFile } from './import/mobaxterm'
 import { getSecret } from './store/secrets'
 
@@ -205,6 +208,25 @@ export function registerIpc(): void {
       width: s.rdpWidth,
       height: s.rdpHeight
     }
+  })
+
+  handle('vnc:prepare', async (_e, id: string) => {
+    const s = getSession(id)
+    if (!s?.host) throw new Error('Session not found')
+    const host = s.host
+    const port = s.port || 5900
+    const url = await issueVncTicket({
+      host,
+      port,
+      open: () => (s.jumpSessionId ? openVncThroughSsh(s.jumpSessionId, host, port) : openTcp(host, port)),
+      verifyCert: (der) => verifyHostKey(host, port, der, 'vnc').catch(() => false)
+    })
+    return { url, username: s.username ?? '', password: getSecret(s.id) }
+  })
+  handle('vnc:openExternal', (_e, id: string) => {
+    const s = getSession(id)
+    if (!s) throw new Error('Session not found')
+    return openVncExternal(s)
   })
 
   // terminals

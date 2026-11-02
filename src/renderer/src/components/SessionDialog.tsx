@@ -78,14 +78,14 @@ export function SessionDialog(): JSX.Element {
       }
     >
       <div className="type-picker">
-        {(['ssh', 'telnet', 'rdp', 'local'] as const).map((t) => (
+        {(['ssh', 'telnet', 'rdp', 'vnc', 'local'] as const).map((t) => (
           <button
             key={t}
             className={form.type === t ? 'active' : ''}
-            onClick={() => setForm((f) => ({ ...f, type: t, port: { ssh: 22, telnet: 23, rdp: 3389, local: undefined }[t] }))}
+            onClick={() => setForm((f) => ({ ...f, type: t, port: { ssh: 22, telnet: 23, rdp: 3389, vnc: 5900, local: undefined }[t] }))}
           >
             <SessionIcon type={t} />
-            {{ ssh: 'SSH', telnet: 'Telnet', local: 'Local shell', rdp: 'RDP' }[t]}
+            {{ ssh: 'SSH', telnet: 'Telnet', local: 'Local shell', rdp: 'RDP', vnc: 'VNC' }[t]}
           </button>
         ))}
       </div>
@@ -119,7 +119,7 @@ export function SessionDialog(): JSX.Element {
           </div>
           <div className="grid2">
             <label className="field">
-              <span>Username{form.type === 'telnet' && ' (optional, auto-login)'}</span>
+              <span>Username{form.type === 'telnet' ? ' (optional, auto-login)' : form.type === 'vnc' ? ' (if the server asks)' : ''}</span>
               <input value={form.username ?? ''} onChange={(e) => set('username', e.target.value)} />
             </label>
             {form.type === 'telnet' ? (
@@ -137,6 +137,15 @@ export function SessionDialog(): JSX.Element {
                   <option value="password">Password</option>
                   <option value="key">Private key</option>
                   <option value="agent">SSH agent</option>
+                </select>
+              </label>
+            ) : form.type === 'vnc' ? (
+              <label className="field">
+                <span>Display</span>
+                <select value={form.vncScale ?? 'fit'} onChange={(e) => set('vncScale', e.target.value as Session['vncScale'])}>
+                  <option value="fit">Fit to tab</option>
+                  <option value="actual">Actual size (scrollbars)</option>
+                  <option value="remote">Resize remote screen</option>
                 </select>
               </label>
             ) : (
@@ -247,6 +256,43 @@ export function SessionDialog(): JSX.Element {
           <p className="muted small">
             A user written as DOMAIN\user also works. On macOS the native client is the free “Windows App” from the
             App Store.
+          </p>
+        </>
+      )}
+
+      {form.type === 'vnc' && (
+        <>
+          {secretField}
+          <label className="field">
+            <span>Connect through SSH (optional)</span>
+            <select value={form.jumpSessionId ?? ''} onChange={(e) => set('jumpSessionId', e.target.value || undefined)}>
+              <option value="">— direct —</option>
+              {jumpCandidates.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Picture</span>
+            <select value={form.vncQuality ?? 'balanced'} onChange={(e) => set('vncQuality', e.target.value as Session['vncQuality'])}>
+              <option value="smooth">Smooth (lower quality, for slow links or lag)</option>
+              <option value="balanced">Balanced</option>
+              <option value="sharp">Sharp (more data)</option>
+            </select>
+          </label>
+          <label className="inline">
+            <input type="checkbox" checked={Boolean(form.vncViewOnly)} onChange={(e) => set('vncViewOnly', e.target.checked)} /> View only (watch without sending keyboard and mouse)
+          </label>
+          <label className="inline">
+            <input type="checkbox" checked={form.vncSendClipboard !== false} onChange={(e) => set('vncSendClipboard', e.target.checked)} /> Send this computer's clipboard automatically
+            when the remote screen gets focus (off: a toolbar button sends it)
+          </label>
+          <p className="muted small">
+            Display :1 is port 5901, :2 is 5902. macOS Screen Sharing and UltraVNC MS-Logon use the system account; classic
+            VNC passwords only count the first 8 characters. Plain VNC is usually not encrypted: on untrusted networks pick an
+            SSH session above, with Host as seen from that server (often localhost). That SSH session needs a saved password or key.
           </p>
         </>
       )}

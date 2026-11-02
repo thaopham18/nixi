@@ -7,6 +7,7 @@ import { closeAll, setSink } from './conn/manager'
 import { closeWatchers, setSftpSink } from './ssh/sftp'
 import { autoStartTunnels, setTunnelSink, stopAllTunnels } from './ssh/tunnels'
 import { stopRdpProxy } from './rdp/proxy'
+import { stopVncProxy } from './vnc/proxy'
 import * as db from './store/database'
 import { findLegacyData } from './store/legacy'
 import { APP_NAME, AUTHOR_EMAIL, copyright } from '@shared/about'
@@ -305,6 +306,7 @@ app.on('before-quit', () => {
   stopAllTunnels()
   closeWatchers()
   stopRdpProxy()
+  stopVncProxy()
   db.flush()
 })
 

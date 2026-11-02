@@ -14,6 +14,7 @@ export interface MobaPreview {
   ssh: number
   rdp: number
   telnet: number
+  vnc: number
   other: number
   macros: number
   encryptedMacros: number
@@ -61,7 +62,8 @@ export async function pickMobaFile(): Promise<MobaPreview | null> {
     ssh: parsed.bookmarks.filter((b) => b.type === 0).length,
     rdp: parsed.bookmarks.filter((b) => b.type === 4).length,
     telnet: parsed.bookmarks.filter((b) => b.type === 1).length,
-    other: parsed.bookmarks.filter((b) => ![0, 1, 4].includes(b.type)).length,
+    vnc: parsed.bookmarks.filter((b) => b.type === 5).length,
+    other: parsed.bookmarks.filter((b) => ![0, 1, 4, 5].includes(b.type)).length,
     macros: parsed.macros.length,
     encryptedMacros: parsed.macros.filter((m) => m.value.startsWith('em:') || m.value.startsWith('_@')).length
   }

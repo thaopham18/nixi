@@ -88,7 +88,7 @@ export function App(): JSX.Element {
         return void typeIntoField(field, macro)
       }
       const pane = activePane()
-      if (!macro || !pane || pane.kind === 'rdp') return
+      if (!macro || !pane || (pane.kind && pane.kind !== 'term')) return
       e.preventDefault()
       e.stopPropagation()
       void runMacro(macro, pane.id)

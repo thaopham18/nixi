@@ -12,7 +12,8 @@ coverage/
 .idea/
 *.log
 
-# local Claude Code settings (CLAUDE.md itself is meant to be shared)
+# local Claude Code notes and settings
+CLAUDE.md
 .claude/settings.local.json
 
 # never commit real user data: Nixi databases, local state, MobaXterm exports, keys

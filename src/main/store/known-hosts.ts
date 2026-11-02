@@ -7,13 +7,13 @@ export function fingerprint(key: Buffer): string {
 }
 
 /**
- * Trust-on-first-use check for SSH host keys and RDP server certificates (DER).
+ * Trust-on-first-use check for SSH host keys and RDP/VNC server certificates (DER).
  * Asks the user for unknown or changed keys.
  */
-export async function verifyHostKey(host: string, port: number, key: Buffer, kind: 'ssh' | 'rdp' = 'ssh'): Promise<boolean> {
+export async function verifyHostKey(host: string, port: number, key: Buffer, kind: 'ssh' | 'rdp' | 'vnc' = 'ssh'): Promise<boolean> {
   const addr = port === 22 && kind === 'ssh' ? host : `[${host}]:${port}`
-  const id = kind === 'rdp' ? `rdp ${addr}` : addr
-  const what = kind === 'rdp' ? 'RDP certificate' : 'host key'
+  const id = kind === 'ssh' ? addr : `${kind} ${addr}`
+  const what = kind === 'ssh' ? 'host key' : `${kind.toUpperCase()} certificate`
   const fp = fingerprint(key)
   const known = knownHostsStore.get()[id]
   if (known === fp) return true
@@ -25,7 +25,7 @@ export async function verifyHostKey(host: string, port: number, key: Buffer, kin
     title: changed ? `${what.toUpperCase()} CHANGED` : 'Unknown host',
     message: changed
       ? `WARNING: the ${what} for ${addr} has changed!\nThis could be a man-in-the-middle attack.`
-      : `The authenticity of ${kind === 'rdp' ? 'RDP server' : 'host'} ${addr} can't be established.`,
+      : `The authenticity of ${kind === 'ssh' ? 'host' : `${kind.toUpperCase()} server`} ${addr} can't be established.`,
     detail: `${changed ? `Old: ${known}\nNew: ` : 'Fingerprint: '}${fp}\n\nTrust this host and continue?`,
     buttons: ['Cancel', changed ? 'Replace key & connect' : 'Trust & connect'],
     defaultId: changed ? 0 : 1,

@@ -1,7 +1,7 @@
 {
   "name": "nixi",
   "productName": "Nixi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MobaXterm-style remote client (SSH, SFTP, tunnels, macros) for macOS",
   "main": "out/main/index.js",
   "license": "MIT",
@@ -28,6 +28,7 @@
   "devDependencies": {
     "@devolutions/iron-remote-desktop": "^0.11.0",
     "@devolutions/iron-remote-desktop-rdp": "^0.7.0",
+    "@novnc/novnc": "^1.7.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

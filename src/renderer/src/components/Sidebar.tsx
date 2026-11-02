@@ -3,7 +3,7 @@ import type { Session } from '@shared/types'
 import { buildTree, type FolderNode } from '@shared/parse'
 import { api, uid } from '../api'
 import { activePaneOf, promptText, showMenu, toast, useStore, type MenuItem } from '../store'
-import { importFromMobaXterm, newSession, openRdpExternal, openSession, openSessionInSplit } from '../actions'
+import { importFromMobaXterm, newSession, openRdpExternal, openSession, openSessionInSplit, openVncExternal } from '../actions'
 import { SftpPanel } from './SftpPanel'
 import { Caret, ClockIcon, FolderIcon, SessionIcon } from './Icons'
 
@@ -117,6 +117,7 @@ function SessionTree(): JSX.Element {
         onClick: () => openSessionInSplit(s)
       },
       ...(s.type === 'rdp' ? [{ label: 'Open in external RDP app', onClick: () => openRdpExternal(s) }] : []),
+      ...(s.type === 'vnc' ? [{ label: 'Open in external VNC app', onClick: () => openVncExternal(s) }] : []),
       { label: 'Edit…', onClick: () => useStore.setState({ modal: 'session', editingSession: s }) },
       {
         label: 'Duplicate',

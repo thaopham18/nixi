@@ -1,4 +1,4 @@
-export type SessionType = 'ssh' | 'telnet' | 'local' | 'rdp'
+export type SessionType = 'ssh' | 'telnet' | 'local' | 'rdp' | 'vnc'
 export type AuthMethod = 'password' | 'key' | 'agent'
 
 export interface Session {
@@ -12,7 +12,7 @@ export interface Session {
   username?: string
   auth?: AuthMethod
   privateKeyPath?: string
-  /** Another saved SSH session used as ProxyJump. */
+  /** Another saved SSH session used as ProxyJump (VNC: the connection goes through it). */
   jumpSessionId?: string
   keepaliveSec?: number
   startupCommand?: string
@@ -27,6 +27,13 @@ export interface Session {
   rdpDomain?: string
   /** embedded tab (IronRDP) or the system's native client (Windows App / mstsc) */
   rdpClient?: 'embedded' | 'native'
+  /** VNC: fit the tab, 1:1 with scrollbars, or ask the server to change resolution */
+  vncScale?: 'fit' | 'actual' | 'remote'
+  /** picture quality vs. speed, for servers that compress with JPEG (Tight) */
+  vncQuality?: 'smooth' | 'balanced' | 'sharp'
+  vncViewOnly?: boolean
+  /** false = this computer's clipboard goes to the server only when asked (toolbar button) */
+  vncSendClipboard?: boolean
   /** Set by main: a password/passphrase is stored in the keychain. Never contains the secret. */
   hasSecret?: boolean
   lastUsed?: number
@@ -130,6 +137,12 @@ export interface RdpLaunch {
   password?: string
   width?: number
   height?: number
+}
+
+export interface VncLaunch {
+  url: string
+  username: string
+  password?: string
 }
 
 export interface RemoteFile {

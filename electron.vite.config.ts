@@ -23,6 +23,8 @@ export default defineConfig({
   renderer: {
     root: 'src/renderer',
     plugins: [react()],
+    // noVNC has a top-level await that the dev server's pre-bundling rejects; it is plain ESM, so skip that step.
+    optimizeDeps: { exclude: ['@novnc/novnc'] },
     resolve: { alias: { '@shared': resolve('src/shared') } }
   }
 })

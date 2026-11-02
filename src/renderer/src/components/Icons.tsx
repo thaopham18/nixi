@@ -28,7 +28,7 @@ export function FileIcon(): JSX.Element {
   )
 }
 
-const tile: Record<Session['type'], string> = { ssh: '#3b82f6', telnet: '#14a39a', rdp: '#6366f1', local: '#64748b' }
+const tile: Record<Session['type'], string> = { ssh: '#3b82f6', telnet: '#14a39a', rdp: '#6366f1', vnc: '#c2703d', local: '#64748b' }
 
 /** Rounded colored tile with a white glyph, one color per session type. */
 export function SessionIcon({ type }: { type: Session['type'] }): JSX.Element {
@@ -40,6 +40,13 @@ export function SessionIcon({ type }: { type: Session['type'] }): JSX.Element {
         <g fill="none" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
           <rect x="4" y="4.3" width="8" height="5.4" rx="0.8" />
           <path d="M8 9.7v1.8M6 11.6h4" />
+        </g>
+      ) : type === 'vnc' ? (
+        // a screen with a pointer on it
+        <g stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3.6" y="4" width="8.8" height="6.4" rx="0.9" fill="none" />
+          <path d="M6.2 11.9h3.6" fill="none" />
+          <path d="M7 5.6v3.2l.9-.8 1.3.1z" fill="#fff" strokeWidth="0.7" />
         </g>
       ) : type === 'telnet' ? (
         // two linked ports

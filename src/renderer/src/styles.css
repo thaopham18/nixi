@@ -708,6 +708,8 @@ html.fullscreen .lock-screen {
   background: transparent;
   padding: 0;
   box-shadow: none !important;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 /* split dividers & drop zones */
@@ -734,7 +736,8 @@ body.resizing * {
 }
 body.resizing iframe,
 body.resizing .term-container,
-body.resizing .rdp-host {
+body.resizing .rdp-host,
+body.resizing .vnc-display {
   pointer-events: none;
 }
 .drop-zones {
@@ -1952,6 +1955,22 @@ input.recording-key {
 .rdp-toolbar button {
   padding: 2px 8px;
   font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* a narrow split keeps the title and the main controls: the rest drops away, like the stats bar */
+.rdp-pane {
+  container-type: inline-size;
+}
+@container (max-width: 760px) {
+  .rdp-toolbar .tb-wide {
+    display: none;
+  }
+}
+@container (max-width: 520px) {
+  .rdp-toolbar .tb-medium {
+    display: none;
+  }
 }
 .rdp-screen {
   flex: 1;
@@ -1964,6 +1983,30 @@ input.recording-key {
   position: absolute;
   inset: 0;
   display: block;
+}
+.rdp-toolbar select {
+  width: auto;
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.vnc-stats {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: #000b;
+  color: #eee;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: text;
+}
+.vnc-display {
+  position: absolute;
+  inset: 0;
 }
 .rdp-overlay {
   position: absolute;

@@ -18,6 +18,7 @@ const sample = [
   'dc01=#91#4%10.0.0.5%3389%CORP\\admin%0%0%0%0%-1%0%0%-1%%%%%0%0%%-1%%-1%-1%0%-1%0%-1%0%0%0%0%#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,192%0%-1%0%%xterm%-1%0%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1%0%#0# #-1',
   'wsl=#105#14%Ubuntu%%%#MobaFont#0# #-1',
   'core-sw=#98#1%10.0.0.254%2323%%%2%%%%%0%0%%1080%%0#MobaFont#0# #-1',
+  'desk=#128#5%10.0.0.9%5901%-1%0%%%%%#MobaFont#0# #-1',
   '',
   '[Macros]',
   'F1-Hello=PLAIN',
@@ -33,7 +34,8 @@ describe('MobaXterm import', () => {
       ['web 1', '', 0],
       ['dc01', 'Prod/Windows', 4],
       ['wsl', 'Prod/Windows', 14],
-      ['core-sw', 'Prod/Windows', 1]
+      ['core-sw', 'Prod/Windows', 1],
+      ['desk', 'Prod/Windows', 5]
     ])
     expect(parsed.macros).toEqual([{ name: 'F1-Hello', value: 'PLAIN', hotkey: 'F1' }])
   })
@@ -57,6 +59,7 @@ describe('MobaXterm import', () => {
       color: '#ff0000'
     })
     expect(sessions.find((s) => s.name === 'core-sw')).toMatchObject({ type: 'telnet', host: '10.0.0.254', port: 2323 })
+    expect(sessions.find((s) => s.name === 'desk')).toMatchObject({ type: 'vnc', host: '10.0.0.9', port: 5901 })
     expect(sessions.find((s) => s.name === 'dc01')).toMatchObject({
       type: 'rdp',
       folder: 'MobaXterm/Prod/Windows',
@@ -70,14 +73,14 @@ describe('MobaXterm import', () => {
   it('round-trips through the .mxtsessions export', () => {
     const { sessions } = mobaToSessions(parsed.bookmarks, id, '/Users/me')
     const { text, skipped } = sessionsToMoba([...sessions, { id: 'l', name: 'local', type: 'local', folder: '' }])
-    expect(skipped).toBe(2) // local shell + Telnet (MobaXterm's Telnet layout is not documented)
+    expect(skipped).toBe(3) // local shell + VNC + Telnet (MobaXterm's Telnet layout is not documented)
     expect(text).toContain('\r\n[Bookmarks_1]\r\nSubRep=MobaXterm\r\n')
     const again = mobaToSessions(parseMobaIni(text).bookmarks, id, '/Users/me').sessions
     const strip = (list: typeof sessions) =>
       list.map(({ name, type, host, port, username, rdpDomain, startupCommand, color }) => ({ name, type, host, port, username, rdpDomain, startupCommand, color }))
     // Gateways are exported inline on the session that uses them, so they come back once more.
     expect(strip(again.filter((s) => !s.folder.includes('_gateways')))).toEqual(
-      strip(sessions.filter((s) => !s.folder.includes('_gateways') && s.type !== 'telnet'))
+      strip(sessions.filter((s) => !s.folder.includes('_gateways') && s.type !== 'telnet' && s.type !== 'vnc'))
     )
   })
 

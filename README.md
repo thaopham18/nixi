@@ -4,13 +4,16 @@
 
 © 2026 Thao Pham · thaopham.cyber@gmail.com · [MIT License](LICENSE)
 
+VNC dùng [noVNC](https://github.com/novnc/noVNC), giấy phép MPL-2.0.
+
 ## Chức năng hiện có (Phase 1 + 2)
 
 | Nhóm | Chức năng |
 |---|---|
-| Session | Cây session có folder, kéo thả để chuyển folder, tìm kiếm, Recent, duplicate/xoá, đổi tên folder. Loại: SSH, Local shell, RDP. Import `~/.ssh/config`, import/export JSON (không kèm mật khẩu). |
+| Session | Cây session có folder, kéo thả để chuyển folder, tìm kiếm, Recent, duplicate/xoá, đổi tên folder. Loại: SSH, Telnet, Local shell, RDP, VNC. Import `~/.ssh/config`, import/export JSON (không kèm mật khẩu). |
 | RDP | Chạy ngay trong tab (IronRDP WebAssembly), không cần app ngoài, dùng được trên macOS. Có NLA/CredSSP, độ phân giải tự theo kích thước tab (hoặc cố định), clipboard text, nút Ctrl+Alt+Del / phím Win. Mật khẩu lưu trong database hoặc hỏi khi kết nối. Kiểm tra chứng chỉ server kiểu TOFU. Mỗi session chọn được "Open with": tab Nixi (nhúng, giải mã bằng phần mềm) hoặc client chính chủ Windows App/mstsc (H.264 phần cứng, mượt nhất). |
-| MobaXterm | Import `MobaXterm.ini` / `.mxtsessions`: session SSH (cả gateway → jump host, key, startup command, màu tab) và RDP (cả `DOMAIN\user`), giữ cấu trúc folder. Macro bị mã hoá thì giải mã bằng master password của MobaXterm (thử nghiệm). Export ra `.mxtsessions` để mở lại bằng MobaXterm. Không import/export mật khẩu. |
+| VNC | Chạy ngay trong tab (noVNC). Kết nối được macOS Screen Sharing (tài khoản Mac), TightVNC, UltraVNC (MS-Logon II), TigerVNC, x11vnc, wayvnc, QEMU/KVM… Có mật khẩu VNC, VeNCrypt + TLS X509 (kiểm chứng chỉ kiểu TOFU), đi qua một session SSH đã lưu (cho server chỉ nghe localhost), clipboard text 2 chiều (tắt được việc tự gửi clipboard theo từng session), 3 chế độ hiển thị (vừa tab / đúng kích thước / đổi độ phân giải máy xa), chọn Smooth / Balanced / Sharp, View only, Ctrl+Alt+Del, mở bằng app VNC của hệ thống. |
+| MobaXterm | Import `MobaXterm.ini` / `.mxtsessions`: session SSH (cả gateway → jump host, key, startup command, màu tab), RDP (cả `DOMAIN\user`), Telnet và VNC (host + port), giữ cấu trúc folder. Macro bị mã hoá thì giải mã bằng master password của MobaXterm (thử nghiệm). Export ra `.mxtsessions` để mở lại bằng MobaXterm. Không import/export mật khẩu. |
 | Telnet | Session Telnet (mặc định port 23) cho switch/router: tự đàm phán kiểu terminal và kích thước cửa sổ (NAWS), tuỳ chọn tự đăng nhập (trả lời Username/Password) và lệnh chạy sau khi đăng nhập, bảng mã UTF-8 hoặc Latin-1. Import cả session Telnet từ MobaXterm. |
 | SSH | Password / private key (+ passphrase) / ssh-agent, keyboard-interactive, ProxyJump qua session khác, keepalive, startup command. Xác minh host key kiểu TOFU, cảnh báo khi key thay đổi. Hỏi mật khẩu khi chưa lưu. |
 | Terminal | Nhiều tab (kéo đổi thứ tự, đổi tên, màu tab, nhân bản bằng nút ⧉ hoặc chuột phải → Duplicate), xterm.js WebGL (tắt được trong Settings nếu GPU của máy gây lỗi hiển thị), truecolor, 3 theme, tìm kiếm trong buffer, link click được, nhấn **R** để reconnect. |
@@ -61,6 +64,7 @@ npx electron scripts/make-icon.mjs   # vẽ lại build/icon.{png,ico,icns} từ
 npm test                      # unit test (parser, macro, SOCKS5, RDCleanPath, MobaXterm)
 npm run typecheck
 npm run build && node scripts/e2e-smoke.mjs   # e2e: cần dev-ssh-server đang chạy
+node scripts/e2e-vnc.mjs                      # VNC: mọi kiểu xác thực với server giả, không cần máy thật
 node scripts/e2e-rdp.mjs [host] [port]        # RDP handshake bằng tài khoản giả (mặc định 127.0.0.1:3389)
 node scripts/e2e-moba.mjs path/to/MobaXterm.ini  # import/export MobaXterm trong profile tạm
 node scripts/e2e-split.mjs                    # split view + xoá folder (cần dev-ssh-server)
@@ -117,7 +121,7 @@ Bản `.exe` chưa ký nên SmartScreen sẽ cảnh báo lần đầu: More info
 ```
 src/shared/     types, parser (ssh_config, tree), macro format, MobaXterm format
 src/main/       Electron main: store/ (database mã hoá, chuyển dữ liệu cũ), known hosts, SSH/SFTP/tunnels, PTY, menu,
-                rdp/ (proxy RDCleanPath WebSocket → TLS), import/ (MobaXterm, giải mã macro)
+                rdp/ (proxy RDCleanPath WebSocket → TLS), vnc/ (proxy WebSocket → TCP/SSH, VeNCrypt TLS), import/ (MobaXterm, giải mã macro)
 src/preload/    API typed qua contextBridge
 src/renderer/   React UI: sidebar (sessions/SFTP), tabs/panes, dialogs, xterm
 scripts/        dev SSH server, e2e smoke test

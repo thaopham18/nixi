@@ -6,6 +6,7 @@ import type {
   OpenConnRequest,
   OpenConnResult,
   RdpLaunch,
+  VncLaunch,
   RemoteFile,
   Session,
   SessionInput,
@@ -82,6 +83,8 @@ const api = {
   exportMoba: (): Promise<{ count: number; skipped: number } | null> => invoke('moba:export'),
   openRdpExternal:(id: string): Promise<void> => invoke('rdp:openExternal', id),
   prepareRdp: (id: string): Promise<RdpLaunch> => invoke('rdp:prepare', id),
+  prepareVnc: (id: string): Promise<VncLaunch> => invoke('vnc:prepare', id),
+  openVncExternal: (id: string): Promise<void> => invoke('vnc:openExternal', id),
 
   openConn: (req: OpenConnRequest): Promise<OpenConnResult> => invoke('conn:open', req),
   write: (id: string, data: string): void => ipcRenderer.send('conn:write', id, data),

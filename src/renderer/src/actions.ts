@@ -3,12 +3,13 @@ import { api, errorMessage } from './api'
 import { activePane, promptText, toast, useStore, type Layout, type Pane } from './store'
 import { copySelection, cursorPoint, disposeTerminal, focusedField, getEntry, pasteInto, connectPane, startRecording, stopRecording } from './terminals'
 import { disposeRdp, reconnectRdp } from './rdp'
+import { disposeVnc, reconnectVnc } from './vnc'
 import { uid } from './api'
 
 function paneFor(session: Session): Omit<Pane, 'id' | 'state'> {
   return {
     sessionId: session.id,
-    kind: session.type === 'rdp' ? 'rdp' : 'term',
+    kind: session.type === 'rdp' || session.type === 'vnc' ? session.type : 'term',
     isSsh: session.type === 'ssh',
     title: session.name
   }
@@ -50,10 +51,15 @@ export function untileTab(tabId: string): void {
 function disposePane(paneId: string): void {
   disposeTerminal(paneId)
   disposeRdp(paneId)
+  disposeVnc(paneId)
 }
 
 export function openRdpExternal(session: Session): void {
   api.openRdpExternal(session.id).catch((e) => toast(errorMessage(e), true))
+}
+
+export function openVncExternal(session: Session): void {
+  api.openVncExternal(session.id).catch((e) => toast(errorMessage(e), true))
 }
 
 export function openLocal(): void {
@@ -164,7 +170,7 @@ export async function importFromMobaXterm(): Promise<void> {
     const preview = await api.pickMobaFile()
     if (!preview) return
     const summary = [
-      `${preview.ssh} SSH, ${preview.rdp} RDP and ${preview.telnet} Telnet sessions`,
+      `${preview.ssh} SSH, ${preview.rdp} RDP, ${preview.vnc} VNC and ${preview.telnet} Telnet sessions`,
       preview.other ? `${preview.other} other sessions (not supported, skipped)` : '',
       preview.macros ? `${preview.macros} macros` : ''
     ].filter(Boolean)
@@ -255,6 +261,7 @@ export function handleMenu(cmd: string): void {
       return duplicateTab()
     case 'reconnect':
       if (pane?.kind === 'rdp') reconnectRdp(pane.id)
+      else if (pane?.kind === 'vnc') reconnectVnc(pane.id)
       else if (pane && pane.state !== 'connected' && pane.state !== 'connecting') void connectPane(pane.id)
       return
     case 'closeTab':
@@ -361,7 +368,7 @@ export function openMacroPicker(): void {
     return s.set({ macroPicker: { field, x: r.left, y: r.bottom, lineHeight: r.height } })
   }
   const pane = activePane()
-  if (!pane || pane.kind === 'rdp' || !pane.connId) return toast('Focus a connected terminal or a text field first', true)
+  if (!pane || !pane.connId) return toast('Focus a connected terminal or a text field first', true)
   const at = cursorPoint(pane.id)
   const box = document.querySelector('.tab-views')?.getBoundingClientRect()
   const fallback = { x: (box?.left ?? 0) + 40, y: (box?.top ?? 0) + 40, lineHeight: 16 }
