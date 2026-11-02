@@ -115,7 +115,8 @@ export interface ConnStatus {
 
 export interface OpenConnRequest {
   sessionId?: string
-  /** one-off password typed in a prompt */
+  /** one-off login typed in a prompt */
+  username?: string
   password?: string
   cols: number
   rows: number

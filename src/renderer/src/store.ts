@@ -49,7 +49,9 @@ export interface PromptRequest {
   checkbox?: string
   /** small text under the title, e.g. "Wrong password, try again" */
   hint?: string
-  resolve: (v: string | null, checked: boolean) => void
+  /** also ask for a username, in a required field above the main one (starts with this text) */
+  username?: string
+  resolve: (v: string | null, checked: boolean, username?: string) => void
 }
 
 export interface ChoiceRequest {
@@ -307,10 +309,16 @@ export function toast(text: string, error = false): void {
 // instead of replacing each other's dialog.
 let promptQueue: Promise<unknown> = Promise.resolve()
 
-function ask(opts: Omit<PromptRequest, 'resolve'>): Promise<{ value: string | null; checked: boolean }> {
+interface PromptAnswer {
+  value: string | null
+  checked: boolean
+  username?: string
+}
+
+function ask(opts: Omit<PromptRequest, 'resolve'>): Promise<PromptAnswer> {
   const next = promptQueue.then(
-    () => new Promise<{ value: string | null; checked: boolean }>((resolve) =>
-      useStore.setState({ prompt: { ...opts, resolve: (value, checked) => resolve({ value, checked }) } })
+    () => new Promise<PromptAnswer>((resolve) =>
+      useStore.setState({ prompt: { ...opts, resolve: (value, checked, username) => resolve({ value, checked, username }) } })
     )
   )
   promptQueue = next.catch(() => undefined)
@@ -321,23 +329,39 @@ export async function promptText(opts: Omit<PromptRequest, 'resolve' | 'checkbox
   return (await ask(opts)).value
 }
 
-export async function promptPassword(opts: {
-  title: string
-  label?: string
-  hint?: string
-  remember?: boolean
-}): Promise<{ password: string; remember: boolean } | null> {
-  const res = await ask({
-    title: opts.title,
-    label: opts.label ?? 'Password',
-    hint: opts.hint,
-    password: true,
-    checkbox: opts.remember ? 'Save password (in the encrypted database)' : undefined
-  })
-  return res.value === null ? null : { password: res.value, remember: res.checked }
+export interface LoginAnswer {
+  username?: string
+  password?: string
+  /** the user ticked Save: store it once the server has accepted it */
+  remember: boolean
 }
 
-/** A small dialog with several buttons; resolves to the button's value, null on Esc / close. */
+/**
+ * One dialog for a whole login. `username` undefined = already known, don't ask;
+ * `askPassword` false = only the username is missing.
+ */
+export async function promptLogin(opts: {
+  title: string
+  hint?: string
+  username?: string
+  askPassword?: boolean
+  secretName?: string
+}): Promise<LoginAnswer | null> {
+  const asksSecret = opts.askPassword !== false
+  const secret = opts.secretName ?? 'Password'
+  const saved = [opts.username !== undefined && 'username', asksSecret && secret.toLowerCase()].filter(Boolean).join(' and ')
+  const res = await ask({
+    title: opts.title,
+    label: asksSecret ? secret : undefined,
+    hint: opts.hint,
+    password: asksSecret,
+    username: opts.username,
+    checkbox: `Save ${saved} (in the encrypted database)`
+  })
+  if (res.value === null) return null
+  return { username: res.username, password: asksSecret ? res.value : undefined, remember: res.checked }
+}
+
 export function askChoice(opts: Omit<ChoiceRequest, 'resolve'>): Promise<string | null> {
   return new Promise((resolve) => useStore.setState({ choice: { ...opts, resolve } }))
 }

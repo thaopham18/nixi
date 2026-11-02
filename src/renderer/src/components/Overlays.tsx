@@ -34,17 +34,27 @@ export function Modal(props: {
 export function PromptDialog(): JSX.Element | null {
   const prompt = useStore((s) => s.prompt)
   const [value, setValue] = useState('')
+  const [username, setUsername] = useState('')
   const input = useRef<HTMLInputElement>(null)
+  const userInput = useRef<HTMLInputElement>(null)
   const [checked, setChecked] = useState(false)
   useEffect(() => {
     setValue(prompt?.value ?? '')
+    setUsername(prompt?.username ?? '')
     setChecked(false)
-    setTimeout(() => input.current?.select(), 0)
+    // Start where there is something to type: a known username only needs its password.
+    setTimeout(() => (prompt?.username === '' || (prompt?.username !== undefined && !prompt.password) ? userInput : input).current?.select(), 0)
   }, [prompt])
   if (!prompt) return null
+  const asksUser = prompt.username !== undefined
   const finish = (v: string | null): void => {
+    if (v !== null && asksUser && !username.trim()) return userInput.current?.focus()
     useStore.setState({ prompt: undefined })
-    prompt.resolve(v, checked)
+    prompt.resolve(v, checked, asksUser && v !== null ? username.trim() : undefined)
+  }
+  const submitUser = (): void => {
+    if (username.trim() && prompt.password && !value) input.current?.focus()
+    else finish(value)
   }
   return (
     <Modal
@@ -59,17 +69,33 @@ export function PromptDialog(): JSX.Element | null {
         </>
       }
     >
-      <label className="field">
-        {prompt.label && <span>{prompt.label}</span>}
-        <input
-          ref={input}
-          autoFocus
-          type={prompt.password ? 'password' : 'text'}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && finish(value)}
-        />
-      </label>
+      {asksUser && (
+        <label className="field">
+          <span>Username</span>
+          <input
+            ref={userInput}
+            name="username"
+            autoComplete="off"
+            spellCheck={false}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submitUser()}
+          />
+        </label>
+      )}
+      {(!asksUser || prompt.password) && (
+        <label className="field">
+          {prompt.label && <span>{prompt.label}</span>}
+          <input
+            ref={input}
+            autoFocus={!asksUser}
+            type={prompt.password ? 'password' : 'text'}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && finish(value)}
+          />
+        </label>
+      )}
       {prompt.hint && <div className="error-line small">{prompt.hint}</div>}
       {prompt.checkbox && (
         <label className="check">

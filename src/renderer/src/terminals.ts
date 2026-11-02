@@ -4,11 +4,12 @@ import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
-import type { Macro, Settings } from '@shared/types'
+import type { Macro, Session, Settings } from '@shared/types'
 import { MacroRecorder } from '@shared/macro'
 import { api, errorMessage, isMac } from './api'
 import { termTheme } from './themes'
-import { allPanes, findPane, promptPassword, toast, useStore, type Pane } from './store'
+import { allPanes, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
+import { forgetTypedPassword, keepLogin, typedLogin } from './login'
 
 interface Entry {
   term: Terminal
@@ -316,27 +317,41 @@ function isAuthError(msg: string): boolean {
   return /authentication|auth methods|All configured/i.test(msg)
 }
 
-/**
- * Passwords typed during this run, per session, so splits,
- * duplicates and reconnects of the same server don't ask again. Memory only.
- */
-const typedPasswords = new Map<string, string>()
-const passwordKey = (p: Pane): string => p.sessionId ?? ''
+function isPassphraseError(msg: string): boolean {
+  return /passphrase|encrypted private key/i.test(msg)
+}
 
 export async function connectPane(paneId: string): Promise<void> {
   const pane = findPane(paneId)
   const entry = entries.get(paneId)
   if (!pane || !entry) return
   const store = useStore.getState()
-  const key = passwordKey(pane)
+  const sessionId = pane.sessionId
+  const session = (): Session | undefined => useStore.getState().sessions.find((s) => s.id === sessionId)
+  const fail = (text: string): void => {
+    store.updatePane(paneId, { state: 'closed' })
+    entry.term.write(`\x1b[31m${text}\x1b[0m\r\n\x1b[33m[Press R to retry]\x1b[0m\r\n`)
+  }
   store.updatePane(paneId, { state: 'connecting' })
-  if (pane.sessionId) entry.term.write(`\x1b[90mConnecting to ${pane.title}…\x1b[0m\r\n`)
+  if (sessionId) entry.term.write(`\x1b[90mConnecting to ${pane.title}…\x1b[0m\r\n`)
 
-  let password = typedPasswords.get(key)
-  let remember = false
+  let { username, password } = sessionId ? typedLogin(sessionId) : ({} as { username?: string; password?: string })
+  let typed: LoginAnswer | undefined
+  let secretName = 'Password'
+
+  // Keys and agents can fall back to the local account name like ssh does; a password can't.
+  const start = session()
+  if (start?.type === 'ssh' && !start.username && !username && (start.auth || 'password') === 'password') {
+    typed = (await promptLogin({ title: `Login for ${pane.title}`, username: '', askPassword: password === undefined && !start.hasSecret })) ?? undefined
+    if (!typed) return fail('Cancelled')
+    if (!findPane(paneId)) return
+    username = typed.username
+    password = typed.password ?? password
+  }
+
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await api.openConn({ sessionId: pane.sessionId, password, cols: entry.term.cols, rows: entry.term.rows })
+      const res = await api.openConn({ sessionId, username, password, cols: entry.term.cols, rows: entry.term.rows })
       if (!findPane(paneId)) {
         api.closeConn(res.connId) // pane closed while connecting
         return
@@ -348,38 +363,40 @@ export async function connectPane(paneId: string): Promise<void> {
       // were dropped, so send the real size now or the shell wraps lines at the wrong width.
       fitPane(paneId)
       api.resize(res.connId, entry.term.cols, entry.term.rows)
-      if (password !== undefined) {
-        typedPasswords.set(key, password)
-        const session = useStore.getState().sessions.find((s) => s.id === pane.sessionId)
-        if (remember && session) {
-          useStore.setState({ sessions: await api.saveSession({ ...session, secret: password }) })
-          toast(`Password for ${session.name} saved in the database`)
-        }
-      }
+      if (typed && sessionId) await keepLogin(sessionId, typed, secretName)
       const s = useStore.getState()
       if (res.isSsh && s.settings?.sftpAutoOpen) s.set({ sidebarOpen: true, sidebarTab: 'sftp' })
       entry.term.focus()
       return
     } catch (err) {
       const msg = errorMessage(err)
-      if (isAuthError(msg) && attempt < 3) {
-        const wrong = password !== undefined || Boolean(useStore.getState().sessions.find((s) => s.id === pane.sessionId)?.hasSecret)
-        typedPasswords.delete(key)
-        const answer = await promptPassword({
-          title: `Password for ${pane.title}`,
-          hint: wrong ? 'The server rejected the password. Try again.' : undefined,
-          remember: Boolean(pane.sessionId)
+      // A jump host's failure says so: this server's password wouldn't help.
+      const viaJump = msg.startsWith('Jump host')
+      const needsPassphrase = !viaJump && isPassphraseError(msg)
+      const rejected = !viaJump && !needsPassphrase && isAuthError(msg)
+      if (rejected && session()?.auth === 'key') return fail('Authentication failed: the server did not accept this key.')
+      if ((rejected || needsPassphrase) && sessionId && attempt < 3) {
+        const known = session()
+        const wrong = needsPassphrase ? /bad passphrase/i.test(msg) : password !== undefined || Boolean(known?.hasSecret)
+        const account = username ?? known?.username ?? ''
+        forgetTypedPassword(sessionId)
+        secretName = needsPassphrase ? 'Passphrase' : 'Password'
+        const answer = await promptLogin({
+          title: `${secretName} for ${pane.title}`,
+          secretName,
+          hint: !wrong ? undefined : needsPassphrase ? 'Wrong passphrase. Try again.' : 'The server rejected the login. Try again.',
+          // After a rejection the username may be what's wrong, so it can be fixed here too.
+          username: rejected && (wrong || !account) ? account : undefined
         })
+        if (answer && !findPane(paneId)) return
         if (answer) {
+          typed = answer
+          username = answer.username ?? username
           password = answer.password
-          remember = answer.remember
           continue
         }
       }
-      store.updatePane(paneId, { state: 'closed' })
-      const friendly = isAuthError(msg) ? 'Authentication failed' : msg
-      entry.term.write(`\x1b[31m${friendly}\x1b[0m\r\n\x1b[33m[Press R to retry]\x1b[0m\r\n`)
-      return
+      return fail(viaJump ? msg : rejected ? 'Authentication failed' : needsPassphrase ? 'Passphrase required' : msg)
     }
   }
 }

@@ -3,7 +3,8 @@ import type { VncCredentials } from '@novnc/novnc'
 import type { Session } from '@shared/types'
 import { VNC_PROXY_ERROR } from '@shared/vnc'
 import { api, errorMessage } from './api'
-import { findPane, promptPassword, promptText, toast, useStore } from './store'
+import { findPane, promptLogin, useStore, type LoginAnswer } from './store'
+import { forgetTypedPassword, keepLogin, typedLogin } from './login'
 
 export type VncScale = NonNullable<Session['vncScale']>
 export type VncQuality = NonNullable<Session['vncQuality']>
@@ -34,14 +35,14 @@ interface VncConn extends VncView {
   askPassword: boolean
   attempts: number
   failure?: { text: string; auth: boolean }
+  /** username typed in the dialog, shown again if the server rejects the login */
+  account?: string
   /** clipboard text last exchanged with the server, so it isn't sent back */
   clip?: string
   stopClipboard?: () => void
 }
 
 const conns = new Map<string, VncConn>()
-/** Passwords typed during this run, per session. Memory only. */
-const typedPasswords = new Map<string, string>()
 
 function setError(paneId: string, error?: { text: string }): void {
   useStore.setState((s) => {
@@ -139,7 +140,7 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
     c.rfb = rfb
     applyView(c)
 
-    let typed: { password: string; remember: boolean; username?: string } | undefined
+    let typed: LoginAnswer | undefined
     let wasConnected = false
 
     // noVNC fires this again whenever more data arrives while it waits: only one dialog at a time.
@@ -150,28 +151,34 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
       asking = true
       void (async () => {
         const creds: VncCredentials = { target: '' }
-        if (types.includes('username')) {
-          const username =
-            launch.username ||
-            (await promptText({ title: `Username for ${pane.title}`, label: 'Username', hint: 'This server asks for an account, e.g. the Mac or Windows login.' }))
-          if (username === null) return cancel()
-          creds.username = username
-          if (typed) typed.username = username
-        }
-        if (types.includes('password')) {
-          let password = c.askPassword ? undefined : (typedPasswords.get(sessionId) ?? launch.password)
-          if (password === undefined) {
-            const answer = await promptPassword({
-              title: `Password for ${pane.title}`,
-              hint: c.askPassword ? 'The server rejected the password. Try again.' : undefined,
-              remember: true
-            })
-            if (!answer) return cancel()
-            password = answer.password
-            typed = { ...answer, username: creds.username }
+        const remembered = typedLogin(sessionId)
+        const wantsUser = types.includes('username')
+        const wantsPassword = types.includes('password')
+        const savedAccount = remembered.username ?? launch.username ?? ''
+        const account = c.account ?? savedAccount
+        const known = c.askPassword ? undefined : (typed?.password ?? remembered.password ?? launch.password)
+        // After a rejection the username may be what's wrong, so it can be fixed in the same dialog.
+        const asksUser = wantsUser && (!account || c.askPassword)
+        const asksPassword = wantsPassword && known === undefined
+        let answer: LoginAnswer | undefined
+        if (asksUser || asksPassword) {
+          const asked = await promptLogin({
+            title: `${asksUser ? 'Login' : 'Password'} for ${pane.title}`,
+            hint: c.askPassword ? 'The server rejected the login. Try again.' : asksUser ? 'This server asks for an account, e.g. the Mac or Windows login.' : undefined,
+            username: asksUser ? account : undefined,
+            askPassword: asksPassword
+          })
+          if (!asked) return cancel()
+          answer = asked
+          c.account = asked.username ?? c.account
+          typed = {
+            username: asked.username === undefined || asked.username === savedAccount ? typed?.username : asked.username,
+            password: asked.password ?? typed?.password,
+            remember: asked.remember || Boolean(typed?.remember)
           }
-          creds.password = password
         }
+        if (wantsUser) creds.username = answer?.username ?? account
+        if (wantsPassword) creds.password = answer?.password ?? known
         asking = false
         if (!stale()) rfb.sendCredentials(creds)
       })()
@@ -196,17 +203,7 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
       update({ state: 'connected' })
       c.stopClipboard = watchClipboard(c, rfb, el, sessionId)
       pipelineRequests(rfb, RFBClass, stale)
-      if (typed) {
-        typedPasswords.set(sessionId, typed.password)
-        const session = useStore.getState().sessions.find((s) => s.id === sessionId)
-        if (typed.remember && session) {
-          const input = { ...session, secret: typed.password, username: session.username || typed.username }
-          void api.saveSession(input).then((sessions) => {
-            useStore.setState({ sessions })
-            toast(`Password for ${session.name} saved in the database`)
-          })
-        }
-      }
+      if (typed) void keepLogin(sessionId, typed)
       if (findPane(paneId) && activeHere(paneId)) rfb.focus()
     })
 
@@ -221,7 +218,7 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
       if (failure?.auth && c.attempts < 3) {
         c.attempts++
         c.askPassword = true
-        typedPasswords.delete(sessionId)
+        forgetTypedPassword(sessionId)
         void connect(paneId, c)
         return
       }

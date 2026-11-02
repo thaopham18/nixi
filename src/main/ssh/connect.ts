@@ -29,21 +29,21 @@ function expandHome(p: string): string {
   return p.startsWith('~') ? homedir() + p.slice(1) : p
 }
 
-export function targetFromSession(session: Session, overridePassword?: string, depth = 0): SshTarget {
+export function targetFromSession(session: Session, typed: { username?: string; password?: string } = {}, depth = 0): SshTarget {
   if (!session.host) throw new Error(`Session "${session.name}" has no host`)
   let jump: SshTarget | undefined
   if (session.jumpSessionId && depth < 5) {
     const j = getSession(session.jumpSessionId)
     if (!j) throw new Error('Jump host session not found')
-    jump = targetFromSession(j, undefined, depth + 1)
+    jump = targetFromSession(j, {}, depth + 1)
   }
   return {
     host: session.host,
     port: session.port || 22,
-    username: session.username || process.env.USER || process.env.USERNAME || 'root',
+    username: typed.username || session.username || process.env.USER || process.env.USERNAME || 'root',
     auth: session.auth || 'password',
     privateKeyPath: session.privateKeyPath,
-    secret: overridePassword ?? getSecret(session.id),
+    secret: typed.password ?? getSecret(session.id),
     keepaliveSec: session.keepaliveSec,
     jump
   }
@@ -63,7 +63,10 @@ export async function connectSsh(target: SshTarget): Promise<{ client: Client; c
   const chain: Client[] = []
   let sock: NodeJS.ReadableStream | undefined
   if (target.jump) {
-    const j = await connectSsh(target.jump)
+    // Named so the UI doesn't take it for this server's own login and ask the wrong password.
+    const j = await connectSsh(target.jump).catch((err: Error) => {
+      throw new Error(`Jump host ${target.jump?.host}: ${err.message}`)
+    })
     chain.push(...j.chain, j.client)
     sock = await new Promise((resolve, reject) =>
       j.client.forwardOut('127.0.0.1', 0, target.host, target.port, (err, stream) =>
@@ -115,6 +118,7 @@ export async function connectSsh(target: SshTarget): Promise<{ client: Client; c
     try {
       client.connect(cfg)
     } catch (err) {
+      chain.forEach((c) => c.end())
       reject(err)
     }
   })

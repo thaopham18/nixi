@@ -126,3 +126,9 @@ export function parentRemote(path: string): string {
   const idx = trimmed.lastIndexOf('/')
   return idx <= 0 ? '/' : trimmed.slice(0, idx)
 }
+
+/** Windows accounts can be typed as DOMAIN\user, which wins over the session's own domain. */
+export function splitDomainUser(username: string, domain = ''): { username: string; domain: string } {
+  const at = username.indexOf('\\')
+  return at < 0 ? { username, domain } : { username: username.slice(at + 1), domain: username.slice(0, at) }
+}

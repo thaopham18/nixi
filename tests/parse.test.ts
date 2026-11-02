@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseName, buildTree, formatMode, parentRemote, parseSshConfig, withRandomSuffix } from '../src/shared/parse'
+import { baseName, buildTree, formatMode, parentRemote, parseSshConfig, withRandomSuffix, splitDomainUser } from '../src/shared/parse'
 
 describe('parseSshConfig', () => {
   it('reads concrete hosts and ignores wildcards', () => {
@@ -19,6 +19,20 @@ Host bastion
     expect(hosts.map((h) => h.alias)).toEqual(['web', 'prod-web', 'bastion'])
     expect(hosts[0]).toMatchObject({ hostName: '1.2.3.4', user: 'deploy', port: 2200, identityFile: '~/.ssh/web', proxyJump: 'bastion' })
     expect(hosts[2].hostName).toBe('bastion.example.com')
+  })
+})
+
+describe('splitDomainUser', () => {
+  it('keeps the session domain for a plain username', () => {
+    expect(splitDomainUser('alice', 'CORP')).toEqual({ username: 'alice', domain: 'CORP' })
+    expect(splitDomainUser('alice@corp.local')).toEqual({ username: 'alice@corp.local', domain: '' })
+  })
+  it('lets a typed DOMAIN\\user win', () => {
+    expect(splitDomainUser('LAB\\bob', 'CORP')).toEqual({ username: 'bob', domain: 'LAB' })
+    expect(splitDomainUser('.\\admin')).toEqual({ username: 'admin', domain: '.' })
+  })
+  it('leaves an empty username empty', () => {
+    expect(splitDomainUser('', 'CORP')).toEqual({ username: '', domain: 'CORP' })
   })
 })
 

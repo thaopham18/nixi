@@ -1,7 +1,7 @@
 // Minimal SSH server for developing Nixi without a real server.
 // Supports: password auth, PTY shell, exec, SFTP (rooted at a folder), -L / -D (direct-tcpip), -R (tcpip-forward).
 //
-//   node scripts/dev-ssh-server.mjs [--port 2222] [--user test] [--password test] [--root <dir>]
+//   node scripts/dev-ssh-server.mjs [--port 2222] [--user test] [--password test] [--root <dir>] [--authorized-key <file.pub>]
 import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fsp, openSync, closeSync, readSync, writeSync, fstatSync } from 'fs'
 import { createServer as netServer, connect as netConnect } from 'net'
 import { join, resolve, posix } from 'path'
@@ -23,6 +23,7 @@ const PASSWORD = arg('password', 'test')
 const ROOT = resolve(arg('root', join(tmpdir(), 'nixi-dev-sftp')))
 // Simulates a slow server/network: delay (ms) before accepting a login.
 const AUTH_DELAY = Number(arg('auth-delay', 0))
+const AUTHORIZED_KEY = arg('authorized-key') && utils.parseKey(readFileSync(arg('authorized-key')))
 mkdirSync(ROOT, { recursive: true })
 if (!existsSync(join(ROOT, 'hello.txt'))) writeFileSync(join(ROOT, 'hello.txt'), 'Hello from the dev SSH server\n')
 mkdirSync(join(ROOT, 'folder'), { recursive: true })
@@ -124,7 +125,12 @@ new Server({ hostKeys: [hostKey] }, (client) => {
   client
     .on('authentication', (ctx) => {
       if (ctx.username === USER && ctx.method === 'password' && ctx.password === PASSWORD) return void setTimeout(() => ctx.accept(), AUTH_DELAY)
-      ctx.reject(['password'])
+      if (ctx.username === USER && ctx.method === 'publickey' && AUTHORIZED_KEY && ctx.key.data.equals(AUTHORIZED_KEY.getPublicSSH())) {
+        // Without a signature the client is only asking whether this key would do.
+        if (!ctx.signature) return void ctx.accept()
+        if (AUTHORIZED_KEY.verify(ctx.blob, ctx.signature, ctx.hashAlgo) === true) return void ctx.accept()
+      }
+      ctx.reject(AUTHORIZED_KEY ? ['password', 'publickey'] : ['password'])
     })
     .on('ready', () => {
       client.on('session', (accept) => {

@@ -35,5 +35,5 @@ export async function openRdpExternal(s: Session): Promise<void> {
   const file = join(dir, `${s.name.replace(/[^\w.-]+/g, '_') || 'session'}.rdp`)
   writeFileSync(file, buildRdpFile(s), 'utf8')
   const err = await shell.openPath(file)
-  if (err) throw new Error(`${err}. Install "Windows App" from the Mac App Store to open RDP sessions.`)
+  if (err) throw new Error(`${err}. Install an RDP client that opens .rdp files${process.platform === 'darwin' ? ' ("Windows App" from the Mac App Store)' : ' (e.g. Remmina)'}.`)
 }

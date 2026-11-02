@@ -1,6 +1,8 @@
 import type { UserInteraction } from '@devolutions/iron-remote-desktop'
 import { api, errorMessage } from './api'
-import { findPane, promptText, useStore } from './store'
+import { splitDomainUser } from '@shared/parse'
+import { findPane, promptLogin, useStore, type LoginAnswer } from './store'
+import { forgetTypedPassword, keepLogin, typedLogin } from './login'
 
 type RdpModule = typeof import('@devolutions/iron-remote-desktop-rdp')
 
@@ -48,8 +50,12 @@ interface RdpConn {
   ui?: UserInteraction
   /** bumped on every (re)connect; stale async work checks it and bails out */
   gen: number
-  /** after a rejected password, ask again instead of reusing the saved one */
-  askPassword: boolean
+  /** why the last login was rejected: ask again instead of reusing the saved one */
+  rejected?: string
+  /** username typed in the dialog, shown again if the server rejects the login */
+  account?: string
+  /** rejected logins in a row, so a wrong saved one doesn't loop forever */
+  attempts: number
   host?: HTMLElement
   lastSize?: string
 }
@@ -81,6 +87,7 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
   const stale = (): boolean => c.gen !== gen || !conns.has(paneId)
   const pane = findPane(paneId)
   if (!pane?.sessionId) return
+  const sessionId = pane.sessionId
   const update = (p: { state: 'connecting' | 'connected' | 'closed' }): void => useStore.getState().updatePane(paneId, p)
   shutdown(c)
   setError(paneId)
@@ -102,14 +109,31 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
     if (stale()) return
     c.ui = ui
 
-    const launch = await api.prepareRdp(pane.sessionId)
-    let password = c.askPassword ? undefined : launch.password
-    if (!password) {
-      const typed = await promptText({ title: `Password for ${pane.title}`, label: launch.username || 'Password', password: true })
-      if (typed === null) throw new Error('Cancelled')
-      password = typed
+    const launch = await api.prepareRdp(sessionId)
+    const remembered = typedLogin(sessionId)
+    const savedAccount = remembered.username ?? (launch.domain && launch.username ? `${launch.domain}\\${launch.username}` : launch.username)
+    let account = c.account ?? savedAccount
+    let password = c.rejected ? undefined : (remembered.password ?? launch.password)
+    let typed: LoginAnswer | undefined
+    if (!account || !password) {
+      const asksUser = !account || Boolean(c.rejected)
+      const answer = await promptLogin({
+        title: `${asksUser ? 'Login' : 'Password'} for ${pane.title}`,
+        hint: c.rejected,
+        username: asksUser ? account : undefined,
+        askPassword: !password
+      })
+      if (!answer) throw new Error('Cancelled')
+      if (stale()) return
+      typed = { ...answer, username: answer.username === savedAccount ? undefined : answer.username }
+      account = answer.username ?? account
+      c.account = account
+      password = answer.password ?? password
     }
+    // The ticket lasts a minute, and the dialog above can take longer than that.
+    const { proxyAddress, authToken } = typed ? await api.prepareRdp(sessionId) : launch
     if (stale()) return
+    const { username, domain } = splitDomainUser(account, launch.domain)
     const box = c.host?.getBoundingClientRect()
     const desktopSize = {
       width: launch.width || Math.max(640, Math.floor(box?.width ?? 1280)),
@@ -118,12 +142,12 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
     c.lastSize = `${desktopSize.width}x${desktopSize.height}`
     const config = ui
       .configBuilder()
-      .withUsername(launch.username)
-      .withPassword(password)
+      .withUsername(username)
+      .withPassword(password ?? '')
       .withDestination(launch.destination)
-      .withServerDomain(launch.domain)
-      .withProxyAddress(launch.proxyAddress)
-      .withAuthToken(launch.authToken)
+      .withServerDomain(domain)
+      .withProxyAddress(proxyAddress)
+      .withAuthToken(authToken)
       .withDesktopSize(desktopSize)
       .withExtension(rdp.displayControl(true))
       .build()
@@ -132,18 +156,24 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
     ui.onWarningCallback((w) => console.warn('[rdp]', w))
     const info = await ui.connect(config)
     if (stale()) return
-    c.askPassword = false
+    c.rejected = undefined
+    c.attempts = 0
     ui.setVisibility(true)
     update({ state: 'connected' })
+    if (typed) void keepLogin(sessionId, typed)
     const end = await info.run()
     if (stale()) return
     update({ state: 'closed' })
     setError(paneId, { text: `Session ended: ${end.reason()}` })
   } catch (err) {
     if (stale()) return
-    update({ state: 'closed' })
     const d = describeError(err)
-    if (d.auth) c.askPassword = true
+    if (d.auth) {
+      c.rejected = d.text
+      forgetTypedPassword(sessionId)
+      if (c.attempts++ < 3) return void connect(paneId, c)
+    }
+    update({ state: 'closed' })
     setError(paneId, d)
   }
 }
@@ -152,7 +182,7 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
 export function attachRdp(paneId: string, host: HTMLElement): void {
   let c = conns.get(paneId)
   if (!c) {
-    c = { gen: 0, askPassword: false, host }
+    c = { gen: 0, attempts: 0, host }
     conns.set(paneId, c)
     void connect(paneId, c)
     return
@@ -163,7 +193,9 @@ export function attachRdp(paneId: string, host: HTMLElement): void {
 
 export function reconnectRdp(paneId: string): void {
   const c = conns.get(paneId)
-  if (c) void connect(paneId, c)
+  if (!c) return
+  c.attempts = 0
+  void connect(paneId, c)
 }
 
 export function disposeRdp(paneId: string): void {

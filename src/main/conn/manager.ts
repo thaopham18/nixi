@@ -36,7 +36,7 @@ function emit(channel: string, ...args: unknown[]): void {
 
 function defaultShell(): string {
   if (process.platform === 'win32') return 'powershell.exe'
-  return process.env.SHELL || '/bin/zsh'
+  return process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
 }
 
 // Apps started from Finder/Dock get no LANG; zsh then treats typed non-ASCII as raw bytes
@@ -172,7 +172,7 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
     isSsh = false
     conn = openLocal(id, session, req.cols, req.rows)
   } else if (session.type === 'ssh') {
-    conn = await openSsh(id, targetFromSession(session, req.password), session.startupCommand, req.cols, req.rows)
+    conn = await openSsh(id, targetFromSession(session, req), session.startupCommand, req.cols, req.rows)
   } else if (session.type === 'telnet') {
     if (!session.host) throw new Error(`Session "${session.name}" has no host`)
     isSsh = false

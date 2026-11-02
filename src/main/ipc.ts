@@ -4,7 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { Macro, OpenConnRequest, Session, SessionInput, Settings, Tunnel } from '@shared/types'
-import { parseSshConfig } from '@shared/parse'
+import { parseSshConfig, splitDomainUser } from '@shared/parse'
 import {
   deleteSession,
   getSession,
@@ -196,14 +196,10 @@ export function registerIpc(): void {
     const s = getSession(id)
     if (!s?.host) throw new Error('Session not found')
     const port = s.port || 3389
-    let username = s.username ?? ''
-    let domain = s.rdpDomain ?? ''
-    if (!domain && username.includes('\\')) [domain, username] = username.split('\\', 2)
     return {
       ...(await issueTicket(s.host, port)),
       destination: `${s.host}:${port}`,
-      username,
-      domain,
+      ...splitDomainUser(s.username ?? '', s.rdpDomain ?? ''),
       password: getSecret(s.id),
       width: s.rdpWidth,
       height: s.rdpHeight
