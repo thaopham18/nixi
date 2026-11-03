@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseName, buildTree, foldedExceptFirst, formatMode, parentRemote, parseSshConfig, withRandomSuffix, splitDomainUser } from '../src/shared/parse'
+import { baseName, buildTree, expandHome, foldedExceptFirst, formatMode, formatSshAddress, parentRemote, parsePrompt, parseSshAddress, parseSshConfig, withRandomSuffix, splitDomainUser } from '../src/shared/parse'
 
 describe('parseSshConfig', () => {
   it('reads concrete hosts and ignores wildcards', () => {
@@ -107,5 +107,86 @@ describe('baseName', () => {
   it('handles both separators and trailing ones', () => {
     expect(baseName('/Users/me/file.txt')).toBe('file.txt')
     expect(baseName('C:\\Users\\me\\dir\\')).toBe('dir')
+  })
+})
+
+describe('parsePrompt', () => {
+  it.each([
+    ['root@web-192-168-1-10:/home/alice/dns#', 'root', '/home/alice/dns'],
+    ['alice@web-192-168-1-10:~$', 'alice', '~'],
+    ['me@host:~/app/src$ ', 'me', '~/app/src'],
+    ['me@host:/$', 'me', '/'],
+    ['(venv) me@host:/srv/app$', 'me', '/srv/app'],
+    ['(base) (venv) me@host:~/x$', 'me', '~/x'],
+    ['me@host:/srv/app (main)$', 'me', '/srv/app'],
+    ['me@host:/my dir/x$', 'me', '/my dir/x'],
+    ['[me@host /etc/nginx]$', 'me', '/etc/nginx'],
+    ['[root@host ~]#', 'root', '~'],
+    ['me@host /srv %', 'me', '/srv'],
+    ['me@host:/srv>', 'me', '/srv']
+  ])('reads %s', (line, user, path) => {
+    expect(parsePrompt(line)).toEqual({ user, path })
+  })
+
+  it.each(['[root@host dns]#', 'me@Mac dns %', 'me@host nginx $'])('knows %s shows only the last name', (line) => {
+    expect(parsePrompt(line)?.path).toBeNull()
+  })
+
+  it.each([
+    'me@host:/srv$ ls -la',
+    'me@host:/srv$ echo $',
+    'me@host:/srv$ echo a #',
+    'total 48',
+    'drwxr-xr-x 5 root root 4096 Nov 3 logs',
+    'Password:',
+    '$',
+    '#',
+    'mysql>',
+    'bash-5.1$',
+    'Switch#',
+    'see me@host for details',
+    'mail me@host.com',
+    ''
+  ])('does not take %s for a prompt with a folder', (line) => {
+    expect(parsePrompt(line)).toBeUndefined()
+  })
+})
+
+describe('expandHome', () => {
+  it('leaves absolute paths alone', () => {
+    expect(expandHome('/etc', 'root', '/home/me')).toBe('/etc')
+  })
+
+  it('uses the SFTP home for the same user', () => {
+    expect(expandHome('~', 'me', '/home/me')).toBe('/home/me')
+    expect(expandHome('~/app', 'me', '/home/me')).toBe('/home/me/app')
+    expect(expandHome('~/app', undefined, '/home/me')).toBe('/home/me/app')
+  })
+
+  it('knows the shell may have changed user with sudo or su', () => {
+    expect(expandHome('~', 'root', '/home/me')).toBe('/root')
+    expect(expandHome('~/x', 'root', '/home/me')).toBe('/root/x')
+    expect(expandHome('~/x', 'bob', '/home/me')).toBe('/home/bob/x')
+    expect(expandHome('~', 'root', '/root')).toBe('/root')
+    expect(expandHome('~/x', 'me', '/home/me/')).toBe('/home/me/x')
+  })
+})
+
+describe('parseSshAddress', () => {
+  it('reads what people type', () => {
+    expect(parseSshAddress('db.example.com')).toEqual({ host: 'db.example.com', port: 22, username: '' })
+    expect(parseSshAddress('  alice@10.0.0.5 ')).toEqual({ host: '10.0.0.5', port: 22, username: 'alice' })
+    expect(parseSshAddress('alice@host:2222')).toEqual({ host: 'host', port: 2222, username: 'alice' })
+    expect(parseSshAddress('[::1]:2222')).toEqual({ host: '::1', port: 2222, username: '' })
+    expect(parseSshAddress('bob@[fe80::1]')).toEqual({ host: 'fe80::1', port: 22, username: 'bob' })
+  })
+
+  it('refuses what cannot be an address', () => {
+    for (const text of ['', ' ', 'two words', 'a@b@c', 'host:0', 'host:70000', 'host:abc', 'ssh://host', '::1', '[oops]', '@host'])
+      expect(parseSshAddress(text)).toBeUndefined()
+  })
+
+  it('writes it back the same way', () => {
+    for (const text of ['host', 'alice@host', 'alice@host:2222', '[::1]:2222', 'bob@[fe80::1]']) expect(formatSshAddress(parseSshAddress(text)!)).toBe(text)
   })
 })

@@ -122,6 +122,8 @@ try {
   await menu('settings')
   await sleep(300)
   await area('settings footer', '.modal-footer button', px.md)
+  await area('settings pages', '.settings-nav button', px.md)
+  await sameWidth('settings pages', '.settings-nav button')
   await sameWidth('settings footer', '.modal-footer button')
   await shot('settings')
   await closeModal()

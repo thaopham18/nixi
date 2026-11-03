@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // Bundled: the package is 24 MB on disk, nearly all of it unused here.
+    plugins: [externalizeDepsPlugin({ exclude: ['@anthropic-ai/sdk'] })],
     resolve: { alias: { '@shared': resolve('src/shared') } },
     build: {
       rollupOptions: {

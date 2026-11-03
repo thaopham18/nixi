@@ -1,3 +1,4 @@
+import type { AiProviderId } from './ai'
 export type SessionType = 'ssh' | 'telnet' | 'local' | 'rdp' | 'vnc'
 export type AuthMethod = 'password' | 'key' | 'agent'
 
@@ -80,6 +81,8 @@ export interface Settings {
   autoReconnect: boolean
   /** ask before running commands that are hard to undo (rm -rf, DROP TABLE…) */
   warnDangerousCommands: boolean
+  /** SSH and Telnet terminals ignore input methods and alphabets other than English */
+  terminalEnglishOnly: boolean
   /** more words or commands to ask about, beyond the built-in rules */
   dangerWatchList: string[]
   downloadDir: string
@@ -92,14 +95,32 @@ export interface Settings {
   termForeground: string
   termBackground: string
   termCursor: string
+  /** run the commands the AI proposes without asking, and send it their output */
+  aiAutoRun: boolean
+  aiProvider: AiProviderId
+  /** the model picked for each provider, kept when switching between them */
+  aiModels: Partial<Record<AiProviderId, string>>
+  /** for the custom provider */
+  aiBaseUrl: string
 }
 
 export type TunnelType = 'L' | 'R' | 'D'
 
+/** A server typed by hand instead of picking a saved session. */
+export interface TunnelServer {
+  host: string
+  port: number
+  username: string
+}
+
 export interface Tunnel {
   id: string
   name: string
+  /** '' when `server` is set */
   sessionId: string
+  server?: TunnelServer
+  /** a password is saved for `server`; set by main, the password itself stays there */
+  hasSecret?: boolean
   type: TunnelType
   /** L/D: local bind; R: remote bind */
   bindHost: string

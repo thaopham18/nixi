@@ -163,6 +163,11 @@ export class InputLine {
   clear(): void {
     this.text = ''
   }
+
+  /** Typed but not sent yet. */
+  get pending(): boolean {
+    return this.text.length > 0
+  }
 }
 
 /** The lines a macro would run. */

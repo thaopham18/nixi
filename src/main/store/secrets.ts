@@ -12,6 +12,11 @@ export function getSecret(id: string): string | undefined {
   return store.get()[id]
 }
 
+/** Every saved value, to hide them in text that leaves this computer. */
+export function allSecrets(): string[] {
+  return Object.values(store.get())
+}
+
 export function hasSecret(id: string): boolean {
   return id in store.get()
 }

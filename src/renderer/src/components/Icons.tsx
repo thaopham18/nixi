@@ -83,9 +83,24 @@ export function Caret({ open }: { open: boolean }): JSX.Element {
   )
 }
 
-type ToolName = 'close' | 'down' | 'chevDown' | 'maximize' | 'restore' | 'detach' | 'record' | 'stop' | 'windows' | 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
+type ToolName = 'keyboard' | 'shield' | 'sparkle' | 'folder' | 'database' | 'close' | 'down' | 'chevDown' | 'maximize' | 'restore' | 'detach' | 'record' | 'stop' | 'windows' | 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
 
 const toolPaths: Record<ToolName, JSX.Element> = {
+  keyboard: (
+    <>
+      <rect x="1.8" y="4" width="12.4" height="8" rx="1.6" />
+      <path d="M4.2 6.6h.01M6.7 6.6h.01M9.3 6.6h.01M11.8 6.6h.01M5.2 9.6h5.6" />
+    </>
+  ),
+  shield: <path d="M8 1.9 13 3.7v4c0 3-2 5.2-5 6.4-3-1.2-5-3.4-5-6.4v-4z" />,
+  sparkle: <path d="M8 2.2c.5 3.2 2.1 4.9 5.6 5.8-3.5.9-5.1 2.6-5.6 5.8-.5-3.2-2.1-4.9-5.6-5.8 3.5-.9 5.1-2.6 5.6-5.8z" />,
+  folder: <path d="M2.2 4.4c0-.7.5-1.2 1.2-1.2h2.9l1.4 1.6h5c.7 0 1.2.5 1.2 1.2v5.8c0 .7-.5 1.2-1.2 1.2H3.4c-.7 0-1.2-.5-1.2-1.2z" />,
+  database: (
+    <>
+      <ellipse cx="8" cy="3.8" rx="5" ry="1.9" />
+      <path d="M3 3.8v8.4c0 1.05 2.2 1.9 5 1.9s5-.85 5-1.9V3.8M3 8c0 1.05 2.2 1.9 5 1.9s5-.85 5-1.9" />
+    </>
+  ),
   up: <path d="M8 13V3.5M3.8 7.7 8 3.5l4.2 4.2" />,
   home: <path d="M2.5 7.6 8 2.8l5.5 4.8M4.2 6.4v6.8h2.8V9.8h2v3.4h2.8V6.4" />,
   refresh: <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.8v2.6h-2.6" />,

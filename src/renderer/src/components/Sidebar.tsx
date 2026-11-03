@@ -5,13 +5,14 @@ import { api, uid } from '../api'
 import { activePaneOf, promptText, showMenu, toast, useStore, type MenuItem } from '../store'
 import { importFromMobaXterm, newSession, openRdpExternal, openSession, openSessionInSplit, openVncExternal } from '../actions'
 import { SftpPanel } from './SftpPanel'
+import { AiPanel } from './AiPanel'
 import { Caret, ClockIcon, FolderIcon, SessionIcon, ToolIcon } from './Icons'
 
 
 export function Sidebar(): JSX.Element {
   // SFTP only makes sense on an SSH connection; the chosen tab comes back when one is focused again.
   const sftpAvailable = useStore((s) => !!activePaneOf(s)?.isSsh)
-  const tab = useStore((s) => (sftpAvailable ? s.sidebarTab : 'sessions'))
+  const tab = useStore((s) => (s.sidebarTab === 'sftp' && !sftpAvailable ? 'sessions' : s.sidebarTab))
   const [width, setWidth] = useState(280)
   const dragging = useRef(false)
 
@@ -40,8 +41,11 @@ export function Sidebar(): JSX.Element {
             SFTP
           </button>
         )}
+        <button className={tab === 'ai' ? 'active' : ''} onClick={() => useStore.setState({ sidebarTab: 'ai' })}>
+          AI
+        </button>
       </div>
-      {tab === 'sessions' ? <SessionTree /> : <SftpPanel />}
+      {tab === 'sessions' ? <SessionTree /> : tab === 'sftp' ? <SftpPanel /> : <AiPanel />}
       <div className="resize-handle" onMouseDown={startResize} />
     </div>
   )

@@ -4,6 +4,7 @@ import { join } from 'path'
 import { app, BrowserWindow, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { registerIpc } from './ipc'
 import { closeAll, setSink } from './conn/manager'
+import { aiClearAll, setAiSink } from './ai/chat'
 import { closeWatchers, setSftpSink } from './ssh/sftp'
 import { autoStartTunnels, setTunnelSink, stopAllTunnels } from './ssh/tunnels'
 import { stopRdpProxy } from './rdp/proxy'
@@ -13,6 +14,7 @@ import { findLegacyData } from './store/legacy'
 import { APP_NAME, AUTHOR_EMAIL, copyright } from '@shared/about'
 import { hotkeyOf, sameShortcut, toAccelerator } from '@shared/macro'
 import { getSettings, macroStore, onShortcutsChange } from './store/stores'
+import { setSecureInput, setSecureInputWindowFocus } from './secure-input'
 
 const isMac = process.platform === 'darwin'
 let mainWindow: BrowserWindow | undefined
@@ -105,6 +107,7 @@ function buildMenu(): void {
         { type: 'separator' },
         item('Toggle Sidebar', 'CmdOrCtrl+B', 'toggleSidebar'),
         item('Toggle SFTP Panel', 'CmdOrCtrl+Shift+F', 'toggleSftp'),
+        item('AI Assistant', 'CmdOrCtrl+Shift+A', 'toggleAi'),
         item('Tunnels', 'CmdOrCtrl+Shift+U', 'tunnels'),
         item('Credentials', 'CmdOrCtrl+Shift+K', 'credentials'),
         item('Macros', 'CmdOrCtrl+Shift+M', 'macros'),
@@ -220,6 +223,7 @@ function createWindow(): void {
   })
   const wc = mainWindow.webContents
   setSink(wc)
+  setAiSink(wc)
   setSftpSink(wc)
   setTunnelSink(wc)
   mainWindow.once('ready-to-show', () => mainWindow?.show())
@@ -236,7 +240,13 @@ function createWindow(): void {
   // Hangs / crashes go to nixi.log in the data folder, so a freeze seen once can be diagnosed.
   wc.on('unresponsive', () => logEvent('renderer unresponsive'))
   wc.on('responsive', () => logEvent('renderer responsive again'))
-  wc.on('render-process-gone', (_e, d) => logEvent(`renderer gone: ${d.reason} (exit ${d.exitCode})`))
+  wc.on('render-process-gone', (_e, d) => {
+    setSecureInput(false)
+    logEvent(`renderer gone: ${d.reason} (exit ${d.exitCode})`)
+  })
+  mainWindow.on('focus', () => setSecureInputWindowFocus(true))
+  mainWindow.on('blur', () => setSecureInputWindowFocus(false))
+  wc.on('did-start-loading', () => setSecureInput(false))
   // While a hotkey field is recording, every combination goes to it, menu shortcuts (⌘W, ⌘Q…)
   // included: they would otherwise fire before the page sees the key.
   wc.on('before-input-event', (e, input) => {
@@ -272,6 +282,7 @@ db.onUnlock(() => {
 onShortcutsChange(() => buildMenu())
 db.onLock(() => {
   closeAll()
+  aiClearAll()
   stopAllTunnels()
   closeWatchers()
   // Start the UI over from a clean slate (lock screen). Done from here because page-initiated

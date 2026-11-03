@@ -23,6 +23,9 @@ mac:
   extraResources:
     - from: native/out/nixi_drag.node
       to: nixi_drag.node
+    # Secure Keyboard Entry while an SSH or Telnet terminal has focus
+    - from: native/out/nixi_secure_input.node
+      to: nixi_secure_input.node
   target:
     - target: dmg
   # Unsigned until an Apple Developer ID is configured (CSC_LINK / CSC_KEY_PASSWORD).

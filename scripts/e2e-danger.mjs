@@ -176,6 +176,7 @@ try {
   console.log('--- settings')
   const settings = async (edit) => {
     await win.locator('.toolbar button[title=Settings]').click()
+    await win.locator('.settings-nav button', { hasText: 'Command Safety' }).click()
     await edit(win.locator('.modal'))
     await win.locator('.modal .modal-footer button.primary').click()
     await wait()

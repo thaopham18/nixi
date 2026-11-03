@@ -3,8 +3,10 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import type { AiAnswer, AiMessageInput, AiProviderId } from '@shared/ai'
 import type { Credential, CredentialInput, Macro, OpenConnRequest, Session, SessionInput, Settings, Tunnel } from '@shared/types'
 import { parseSshConfig, splitDomainUser } from '@shared/parse'
+import { setSecureInput } from './secure-input'
 import {
   credentialSecret,
   deleteCredential,
@@ -28,8 +30,9 @@ import * as db from './store/database'
 import { findLegacyData } from './store/legacy'
 import { APP_NAME, AUTHOR, AUTHOR_EMAIL, copyright } from '@shared/about'
 import { closeConn, openConn, resizeConn, watchStats, writeConn } from './conn/manager'
+import { aiAnswer, aiClear, aiHasKey, aiSend, aiStop, previewAttachment, setAiKey, testAiKey, aiIsReady, listAiModels, type AiTarget } from './ai/chat'
 import * as sftp from './ssh/sftp'
-import { saveTunnels, startTunnel, stopTunnel, tunnelStatuses } from './ssh/tunnels'
+import { listTunnels, saveTunnels, startTunnel, stopTunnel, tunnelStatuses } from './ssh/tunnels'
 import { openRdpExternal } from './rdp/rdp-file'
 import { issueTicket } from './rdp/proxy'
 import { issueVncTicket, openTcp } from './vnc/proxy'
@@ -237,6 +240,18 @@ export function registerIpc(): void {
   })
 
   // terminals
+  handle('ai:isReady', () => aiIsReady())
+  handle('ai:hasKey', (_e, provider: AiProviderId) => aiHasKey(provider))
+  handle('ai:models', (_e, target: AiTarget, key?: string) => listAiModels(target, key))
+  handle('keyboard:secureInput', (_e, on: boolean) => setSecureInput(on === true))
+  handle('ai:setKey', (_e, provider: AiProviderId, key: string | null) => setAiKey(provider, key))
+  handle('ai:testKey', (_e, target: AiTarget, key?: string) => testAiKey(target, key))
+  handle('ai:preview', (_e, raw: string) => previewAttachment(raw))
+  handle('ai:send', (_e, chatId: string, message: AiMessageInput) => aiSend(chatId, message))
+  handle('ai:answer', (_e, chatId: string, id: string, answer: AiAnswer) => aiAnswer(chatId, id, answer))
+  handle('ai:stop', (_e, chatId: string) => aiStop(chatId))
+  handle('ai:clear', (_e, chatId: string) => aiClear(chatId))
+
   handle('conn:open', (_e, req: OpenConnRequest) => openConn(req))
   ipcMain.on('conn:write', (_e, id: string, data: string) => writeConn(id, data))
   ipcMain.on('conn:resize', (_e, id: string, cols: number, rows: number) => resizeConn(id, cols, rows))
@@ -283,8 +298,8 @@ export function registerIpc(): void {
   handle('sftp:edit', (_e, id: string, p: string) => sftp.editRemote(id, p))
 
   // tunnels
-  handle('tunnels:list', () => ({ tunnels: tunnelStore.get(), statuses: tunnelStatuses() }))
-  handle('tunnels:save', (_e, t: Tunnel[]) => saveTunnels(t))
+  handle('tunnels:list', () => ({ tunnels: listTunnels(), statuses: tunnelStatuses() }))
+  handle('tunnels:save', (_e, t: Tunnel[], passwords?: Record<string, string>) => saveTunnels(t, passwords))
   handle('tunnels:start', (_e, id: string) => startTunnel(id))
   handle('tunnels:stop', (_e, id: string) => stopTunnel(id))
 

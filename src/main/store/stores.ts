@@ -16,6 +16,7 @@ const defaultSettings: Settings = {
   warnMultilinePaste: true,
   autoReconnect: true,
   warnDangerousCommands: true,
+  terminalEnglishOnly: true,
   dangerWatchList: [],
   downloadDir: '',
   sftpAutoOpen: true,
@@ -23,7 +24,11 @@ const defaultSettings: Settings = {
   serverStats: true,
   termForeground: '',
   termBackground: '',
-  termCursor: ''
+  termCursor: '',
+  aiProvider: 'anthropic',
+  aiModels: {},
+  aiBaseUrl: '',
+  aiAutoRun: false
 }
 
 // All of these live in the encrypted database file (see database.ts).

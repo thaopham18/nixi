@@ -147,3 +147,52 @@ export function splitDomainUser(username: string, domain = ''): { username: stri
   const at = username.indexOf('\\')
   return at < 0 ? { username, domain } : { username: username.slice(at + 1), domain: username.slice(0, at) }
 }
+
+export interface PromptInfo {
+  user: string
+  /** absolute or ~-relative; null = a prompt that shows only the folder's last name */
+  path: string | null
+}
+
+// user@host:/path$   user@host:~/path#   user@host /path %   [user@host /path]$   with an optional (venv) in front
+const PROMPT = /^(?:\([^)]*\)\s*)*\[?([\w.-]+)@[\w.-]+(?::|\s+)([^#$%>\]]*?)\s*\]?\s*[#$%>]$/
+
+/** Read the folder from the line under the cursor. Anything after the prompt (typed text) means no match. */
+export function parsePrompt(line: string): PromptInfo | undefined {
+  const m = PROMPT.exec(line.trim())
+  if (!m) return undefined
+  // A git branch or similar after the path: user@host:/path (main)$
+  const path = m[2].replace(/\s+\([^)]*\)$/, '')
+  if (!path) return undefined
+  return { user: m[1], path: path === '~' || /^~?\//.test(path) ? path : null }
+}
+
+/** Where ~ points for `user`, seen from the home folder of the account SFTP logged in with. */
+export function expandHome(path: string, user: string | undefined, home: string): string {
+  if (!path.startsWith('~')) return path
+  const base = home.replace(/\/+$/, '')
+  const login = base.slice(base.lastIndexOf('/') + 1)
+  // sudo -i and su change the shell's user, but not SFTP's.
+  const userHome = !user || user === login ? base : user === 'root' ? '/root' : `${base.slice(0, base.lastIndexOf('/'))}/${user}`
+  return (userHome + path.slice(1)) || '/'
+}
+
+export interface SshAddress {
+  host: string
+  port: number
+  username: string
+}
+
+/** `host`, `user@host`, `user@host:2222`, `[::1]:2222`. undefined when it can't be an address. */
+export function parseSshAddress(text: string): SshAddress | undefined {
+  const m = /^(?:([^\s@]+)@)?(?:\[([0-9a-fA-F:.]+)\]|([^\s@:/[\]]+))(?::(\d+))?$/.exec(text.trim())
+  if (!m) return undefined
+  const port = m[4] ? Number(m[4]) : 22
+  if (port < 1 || port > 65535) return undefined
+  return { host: m[2] ?? m[3], port, username: m[1] ?? '' }
+}
+
+export function formatSshAddress({ host, port, username }: SshAddress): string {
+  const name = host.includes(':') ? `[${host}]` : host
+  return `${username ? username + '@' : ''}${name}${port !== 22 ? ':' + port : ''}`
+}

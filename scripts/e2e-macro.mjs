@@ -135,12 +135,13 @@ try {
   check(`default key ${def} opens the list`, (await picker.count()) === 1)
   await win.keyboard.press('Escape')
   await menu('settings')
+  await win.locator('.settings-nav button', { hasText: 'Macros' }).click()
   const field = win.locator('.modal label.field', { hasText: 'macro list at the cursor' }).locator('input')
   await field.click()
   await win.keyboard.press('Control+Alt+KeyK')
   check('settings records the new key', (await field.inputValue()) === 'Ctrl+Alt+K', await field.inputValue())
   await win.screenshot({ path: join(tmpdir(), 'nixi-e2e-macro-settings.png') })
-  await win.locator('.modal button', { hasText: 'Save' }).click()
+  await win.locator('.modal button', { hasText: /^Save$/ }).click()
   await sleep(300)
   const accel = await app.evaluate(({ Menu }) => {
     const find = (m) => m.items.flatMap((i) => [i, ...(i.submenu ? find(i.submenu) : [])])
@@ -159,10 +160,11 @@ try {
 
   // Space works as the key too (with a modifier).
   await menu('settings')
+  await win.locator('.settings-nav button', { hasText: 'Macros' }).click()
   await field.click()
   await win.keyboard.press('Alt+Space')
   check('Alt+Space can be recorded', (await field.inputValue()) === 'Alt+Space', JSON.stringify(await field.inputValue()))
-  await win.locator('.modal button', { hasText: 'Save' }).click()
+  await win.locator('.modal button', { hasText: /^Save$/ }).click()
   await sleep(300)
   await term.click()
   await win.keyboard.press('Alt+Space')
@@ -174,6 +176,7 @@ try {
   // process, then the menu item gives the key up.
   const closeKey = process.platform === 'darwin' ? ['Meta+KeyW', 'Cmd+W'] : ['Control+Shift+KeyW', 'Ctrl+Shift+W']
   await menu('settings')
+  await win.locator('.settings-nav button', { hasText: 'Macros' }).click()
   await field.click()
   await win.evaluate(() => {
     window.__pageKeys = 0
@@ -188,7 +191,7 @@ try {
   await sleep(300)
   check(`menu key ${closeKey[1]} can be recorded`, (await field.inputValue()) === closeKey[1], JSON.stringify(await field.inputValue()))
   check('the key went through the main process (page never saw it)', (await win.evaluate(() => window.__pageKeys)) === 0)
-  await win.locator('.modal button', { hasText: 'Save' }).click()
+  await win.locator('.modal button', { hasText: /^Save$/ }).click()
   await sleep(300)
   const closeAccel = await app.evaluate(({ Menu }) => {
     const find = (m) => m.items.flatMap((i) => [i, ...(i.submenu ? find(i.submenu) : [])])

@@ -6,12 +6,15 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Macro, Session, Settings } from '@shared/types'
 import { MacroRecorder } from '@shared/macro'
+import { asksForSecret, looksLikePrompt } from '@shared/ai'
+import { parsePrompt } from '@shared/parse'
 import { commandOnScreen, findDanger, InputLine, macroLines } from '@shared/danger'
 import { endsSession, isNetworkError, Retry, RETRY_LIMIT } from '@shared/reconnect'
 import { api, errorMessage, isMac } from './api'
 import { termTheme } from './themes'
 import { allPanes, askChoice, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
 import { forgetTypedPassword, keepLogin, typedLogin } from './login'
+import { englishKey } from '@shared/keyboard'
 
 interface Entry {
   term: Terminal
@@ -25,6 +28,10 @@ interface Entry {
   leftAt?: number
   /** the try under way belongs to the reconnect loop */
   reconnecting?: boolean
+  /** when the shell last reported its folder itself (OSC 7) */
+  osc7At?: number
+  promptTimer?: ReturnType<typeof setTimeout>
+  lastOutputAt?: number
 }
 
 /** A full-screen program that lost its connection can't switch these back itself. */
@@ -38,8 +45,11 @@ let recorder: MacroRecorder | undefined
 api.onData((connId, data) => {
   const paneId = paneByConn.get(connId)
   if (paneId) {
-    entries.get(paneId)?.term.write(data)
+    const entry = entries.get(paneId)
+    entry?.term.write(data)
+    if (entry) entry.lastOutputAt = Date.now()
     noteActivity(connId, paneId)
+    watchPrompt(paneId)
   }
   outputListeners.get(connId)?.forEach((fn) => fn(data))
 })
@@ -67,6 +77,26 @@ useStore.subscribe((s, prev) => {
   if (s.tabs !== prev.tabs && Object.keys(s.activity).some((id) => !s.tabs.some((t) => t.id === id)))
     useStore.setState({ activity: Object.fromEntries(Object.keys(s.activity).filter((id) => s.tabs.some((t) => t.id === id)).map((id) => [id, true])) })
 })
+
+// Most shells don't report their folder (bash on Ubuntu has no OSC 7 unless configured), but a prompt
+// usually shows it. Read once output settles. Right after an OSC 7 the shell's own word wins.
+const PROMPT_SETTLE_MS = 120
+const OSC7_WINS_MS = 2000
+function watchPrompt(paneId: string): void {
+  const entry = entries.get(paneId)
+  if (!entry || !findPane(paneId)?.isSsh) return
+  clearTimeout(entry.promptTimer)
+  entry.promptTimer = setTimeout(() => {
+    const pane = findPane(paneId)
+    if (!pane || !entries.has(paneId) || entry.term.buffer.active.type === 'alternate') return
+    if (Date.now() - (entry.osc7At ?? 0) < OSC7_WINS_MS) return
+    const prompt = parsePrompt(screenCommand(entry.term))
+    if (!prompt) return
+    // A prompt with only the last name: the old folder is no longer known to be right.
+    const cwd = prompt.path ?? undefined
+    if (cwd !== pane.cwd || prompt.user !== pane.cwdUser) useStore.getState().updatePane(paneId, { cwd, cwdUser: prompt.user })
+  }, PROMPT_SETTLE_MS)
+}
 
 api.onStats((connId, stats) => useStore.setState((s) => ({ serverStats: { ...s.serverStats, [connId]: stats } })))
 
@@ -167,9 +197,8 @@ function dangerIn(candidates: string[]): DangerHit[] {
 }
 
 /** True = run it anyway. */
-async function askDanger(paneId: string, hits: DangerHit[]): Promise<boolean> {
+async function askDanger(paneId: string, hits: DangerHit[], targets = inputTargets(paneId)): Promise<boolean> {
   const watchList = useStore.getState().settings?.dangerWatchList
-  const targets = inputTargets(paneId)
   const names = [...new Set(targets.map((p) => p.title))].join(', ')
   const answer = await askChoice({
     title: 'Dangerous command',
@@ -212,6 +241,7 @@ function handleInput(paneId: string, data: string): void {
   }
   if (entry && data === '\x04') entry.leftAt = Date.now()
   const lines = entry?.typed.feed(data)
+  if (entry?.term.buffer.active.type === 'alternate') entry.typed.clear() // keys for vim or less, not a command line
   // Full-screen programs (vim, less…) have no command line: Enter there runs nothing.
   if (!entry || !lines || !pane.connId || entry.term.buffer.active.type === 'alternate') return sendInput(paneId, data)
   if (askingDanger.has(paneId)) return // the dialog is up; a late Enter must not slip through
@@ -297,6 +327,38 @@ const watchDpr = (): void => {
 }
 watchDpr()
 
+/** SSH and Telnet get the keys as pressed, whatever input method the computer is using. */
+function englishOnly(paneId: string): boolean {
+  const s = useStore.getState()
+  if (s.settings?.terminalEnglishOnly === false) return false
+  const sessionId = findPane(paneId)?.sessionId
+  const type = sessionId && s.sessions.find((x) => x.id === sessionId)?.type
+  return type === 'ssh' || type === 'telnet'
+}
+
+let secureFor: string | undefined
+
+function watchKeyboard(paneId: string, box: HTMLTextAreaElement): void {
+  // A read-only field makes Chromium turn the input method off, on every system.
+  box.readOnly = englishOnly(paneId)
+  box.addEventListener('focus', () => {
+    box.readOnly = englishOnly(paneId)
+    secureFor = box.readOnly ? paneId : undefined
+    void api.setSecureInput(box.readOnly)
+  })
+  box.addEventListener('blur', () => {
+    secureFor = undefined
+    void api.setSecureInput(false)
+  })
+  for (const type of ['compositionstart', 'compositionupdate', 'compositionend'])
+    box.addEventListener(type, (e) => box.readOnly && e.stopImmediatePropagation(), true)
+}
+
+useStore.subscribe((s, prev) => {
+  if (s.settings?.terminalEnglishOnly === prev.settings?.terminalEnglishOnly) return
+  for (const [paneId, entry] of entries) if (entry.term.textarea) entry.term.textarea.readOnly = englishOnly(paneId)
+})
+
 export function createTerminal(paneId: string, container: HTMLElement): Entry {
   const existing = entries.get(paneId)
   if (existing) {
@@ -341,8 +403,18 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
   term.attachCustomKeyEventHandler((e) => {
     if (isMac && e.metaKey) return false
     if (!isMac && e.ctrlKey && e.shiftKey && /^[A-Z]$/.test(e.key.toUpperCase()) && e.key.length === 1) return false
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && englishOnly(paneId)) {
+      if (e.type === 'keypress') return false
+      const typed = e.type === 'keydown' ? englishKey({ key: e.key, code: e.code, shiftKey: e.shiftKey, capsLock: e.getModifierState('CapsLock') }) : undefined
+      if (typed !== undefined) {
+        e.preventDefault()
+        if (typed) term.input(typed, true)
+        return false
+      }
+    }
     return true
   })
+  if (term.textarea) watchKeyboard(paneId, term.textarea)
   term.onData((d) => handleInput(paneId, d))
   term.onResize(({ cols, rows }) => {
     // Exposed for debugging/tests: what size the shell should be using.
@@ -359,7 +431,11 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
   // OSC 7: file://host/path — lets SFTP follow the terminal folder.
   term.parser.registerOscHandler(7, (data) => {
     const m = data.match(/^file:\/\/[^/]*(\/.*)$/)
-    if (m) useStore.getState().updatePane(paneId, { cwd: decodeURIComponent(m[1]) })
+    if (m) {
+      const entry = entries.get(paneId)
+      if (entry) entry.osc7At = Date.now()
+      useStore.getState().updatePane(paneId, { cwd: decodeURIComponent(m[1]), cwdUser: undefined })
+    }
     return true
   })
   // Listeners live on the xterm element so they follow it when the pane moves.
@@ -394,6 +470,11 @@ export function disposeTerminal(paneId: string): void {
     paneByConn.delete(pane.connId)
   }
   entry?.retry.stop()
+  clearTimeout(entry?.promptTimer)
+  if (secureFor === paneId) {
+    secureFor = undefined
+    void api.setSecureInput(false)
+  }
   entry?.term.dispose()
   entries.delete(paneId)
   if (entry) repaintAll()
@@ -649,4 +730,112 @@ export async function runMacro(macro: Macro, paneId: string): Promise<void> {
   const results = await Promise.allSettled(targets.map((p) => runOn(p, macro)))
   const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
   if (failed.length) toast(`Macro "${macro.name}": ${errorMessage(failed[0].reason)}`, true)
+}
+
+// ---------------------------------------------------------------- AI assistant
+
+/** Lines `from`..`to` of a buffer, with lines the terminal wrapped joined back up. */
+function bufferText(buf: Terminal['buffer']['active'], from: number, to: number): string {
+  let out = ''
+  for (let y = from; y <= to; y++) {
+    const line = buf.getLine(y)
+    if (!line) break
+    if (y > from && !line.isWrapped) out += '\n'
+    out += line.translateToString(!buf.getLine(y + 1)?.isWrapped)
+  }
+  return out.replace(/\s+$/, '')
+}
+
+/** What a message to the AI can carry: the selection if there is one, otherwise the screen. */
+export function attachableText(paneId: string): { paneId: string; raw: string; source: 'screen' | 'selection' } | undefined {
+  const term = entries.get(paneId)?.term
+  if (!term) return undefined
+  const selection = term.getSelection().trim()
+  if (selection) return { paneId, raw: selection, source: 'selection' }
+  const buf = term.buffer.active
+  return { paneId, raw: bufferText(buf, buf.baseY, buf.baseY + term.rows - 1), source: 'screen' }
+}
+
+/** Why a proposed command can't be typed into this pane right now. */
+export function runBlock(paneId: string): string | undefined {
+  const entry = entries.get(paneId)
+  const pane = findPane(paneId)
+  if (!entry || !pane) return 'This pane has no terminal to run it in.'
+  if (!pane.connId) return 'This terminal is not connected.'
+  if (entry.term.buffer.active.type === 'alternate') return 'A full-screen program is open in this terminal. Close it first.'
+  if (entry.typed.pending) return 'There is unfinished text at the prompt. Clear it first, so it does not join the command.'
+  if (asksForSecret(screenCommand(entry.term))) return 'This terminal is waiting for a password. Answer it first.'
+  return undefined
+}
+
+export interface ProposedRun {
+  /** what it has printed so far */
+  read(): string
+  /** Settle on how far it got, for when nobody is watching. */
+  settle(cancelled: () => boolean, onHold: (holding: boolean) => void): Promise<'finished' | 'running' | 'fullscreen' | 'cancelled'>
+}
+
+const SETTLE_QUIET_MS = 400
+/** With no prompt and no output for this long, tell the AI it is still going rather than hold everything up. */
+const SILENT_MS = 10_000
+const LONGEST_MS = 120_000
+
+/**
+ * Type a command into this one pane, multi-exec or not. Undefined = it did not run. `focus`: the
+ * user clicked Run; in automatic mode they may be typing elsewhere.
+ */
+export async function runProposed(paneId: string, command: string, focus = true): Promise<ProposedRun | undefined> {
+  const before = runBlock(paneId)
+  if (before) throw new Error(before)
+  const self = findPane(paneId)!
+  const hits = dangerIn([command])
+  if (hits.length && !(await askDanger(paneId, hits, [self]))) return undefined
+  // The dialog took time: the terminal may have changed.
+  const after = runBlock(paneId)
+  if (after) throw new Error(after)
+  const entry = entries.get(paneId)!
+  const connId = findPane(paneId)!.connId!
+  const marker = entry.term.registerMarker(0)
+  if (endsSession(command)) entry.leftAt = Date.now()
+  const startRow = marker?.line ?? 0
+  quiet(connId, 1000)
+  api.write(connId, command + '\r')
+  if (focus) entry.term.focus()
+  let last = ''
+  return {
+    read: () => {
+      // Keep the last text once the pane is gone, so it can still be sent.
+      const term = entries.get(paneId)?.term
+      if (!term) return last
+      const buf = term.buffer.normal
+      // A marker scrolled out of the history, or wiped by `clear`, reads from the top.
+      last = bufferText(buf, Math.max(marker?.line ?? 0, 0), buf.length - 1)
+      return last
+    },
+    settle: async (cancelled, onHold) => {
+      let since = Date.now()
+      let held = false
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 200))
+        if (cancelled()) return 'cancelled'
+        const e = entries.get(paneId)
+        if (!e || !findPane(paneId)?.connId) return 'finished' // connection gone: nothing more will come
+        const buf = e.term.buffer.active
+        if (buf.type === 'alternate') return 'fullscreen'
+        const line = screenCommand(e.term)
+        // sudo and the like: only the user can answer, and the clock stops meanwhile.
+        const holding = asksForSecret(line)
+        if (holding !== held) onHold((held = holding))
+        if (holding) {
+          since = Date.now()
+          continue
+        }
+        const now = Date.now()
+        const silent = now - Math.max(since, e.lastOutputAt ?? 0)
+        // A newer row than the command's own: on a slow link the old prompt is still under the cursor at first.
+        if (silent >= SETTLE_QUIET_MS && buf.baseY + buf.cursorY > startRow && looksLikePrompt(line)) return 'finished'
+        if (silent >= SILENT_MS || now - since >= LONGEST_MS) return 'running'
+      }
+    }
+  }
 }

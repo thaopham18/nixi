@@ -1,3 +1,4 @@
+import type { AiChat } from './ai'
 import { create } from 'zustand'
 import type { ServerStats } from '@shared/stats'
 import type { ConnState, Credential, Macro, Session, Settings, Transfer, Tunnel, TunnelStatus } from '@shared/types'
@@ -13,8 +14,10 @@ export interface Pane {
   state: ConnState | 'idle'
   isSsh: boolean
   title: string
-  /** remote cwd reported via OSC 7 */
+  /** remote folder, from OSC 7 or the prompt; may start with ~ */
   cwd?: string
+  /** whose ~ that is, when it came from a prompt */
+  cwdUser?: string
   /** relative size in a side-by-side / stacked split (flex-grow) */
   size?: number
 }
@@ -67,6 +70,8 @@ export interface ChoiceRequest {
 
 type Modal = 'session' | 'settings' | 'tunnels' | 'macros' | 'credentials' | null
 
+export type SettingsPage = 'terminal' | 'keyboard' | 'connections' | 'safety' | 'ai' | 'macros' | 'sftp' | 'database'
+
 interface State {
   settings?: Settings
   sessions: Session[]
@@ -83,7 +88,14 @@ interface State {
   tabs: Tab[]
   activeTabId?: string
   sidebarOpen: boolean
-  sidebarTab: 'sessions' | 'sftp'
+  sidebarTab: 'sessions' | 'sftp' | 'ai'
+  /** AI conversations by pane; gone with the pane, or with a lock */
+  aiChats: Record<string, AiChat>
+  /** SFTP panel follows the terminal's folder */
+  sftpFollow: boolean
+  /** open Settings with this field in view */
+  /** where Settings should open, for a button that sends the user there */
+  settingsFocus?: { page: SettingsPage; field?: string }
   modal: Modal
   editingSession?: Partial<Session>
   multiExec: boolean
@@ -141,6 +153,8 @@ export const useStore = create<State>((set, get) => ({
   tabs: [],
   sidebarOpen: true,
   sidebarTab: 'sessions',
+  aiChats: {},
+  sftpFollow: false,
   modal: null,
   multiExec: false,
   multiExecExcluded: {},
@@ -382,4 +396,9 @@ export function askChoice(opts: Omit<ChoiceRequest, 'resolve'>): Promise<string 
 export function showMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]): void {
   e.preventDefault()
   useStore.setState({ contextMenu: { x: e.clientX, y: e.clientY, items } })
+}
+
+/** Opens Settings on the page that holds what needs setting up, on that field if one is named. */
+export function openSettings(page: SettingsPage, field?: string): void {
+  useStore.setState({ modal: 'settings', settingsFocus: { page, field } })
 }

@@ -345,6 +345,8 @@ export function handleMenu(cmd: string): void {
     case 'toggleSftp':
       if (!activePane()?.isSsh) return toast('SFTP is available on SSH connections', true)
       return s.set({ sidebarOpen: true, sidebarTab: s.sidebarTab === 'sftp' ? 'sessions' : 'sftp' })
+    case 'toggleAi':
+      return s.set({ sidebarOpen: true, sidebarTab: s.sidebarOpen && s.sidebarTab === 'ai' ? 'sessions' : 'ai' })
     case 'multiExec':
       return s.set({ multiExec: !s.multiExec })
     case 'fontUp':

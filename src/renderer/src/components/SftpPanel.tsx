@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { expandHome } from '@shared/parse'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConflictMode, RemoteFile } from '@shared/types'
 import { baseName, formatMode, formatSize, joinRemote, parentRemote } from '@shared/parse'
 import { formatBytes } from '@shared/stats'
@@ -44,29 +45,36 @@ export function SftpPanel(): JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
-  const [follow, setFollow] = useState(false)
+  // In the store: this component goes away when another sidebar tab opens.
+  const follow = useStore((s) => s.sftpFollow)
   const [showHidden, setShowHidden] = useState(false)
   const [dropping, setDropping] = useState(false)
   /** folder row a drag hovers: dropping there uploads into it */
   const [dropDir, setDropDir] = useState<string>()
 
+  const loadSeq = useRef(0)
   const load = useCallback(
-    async (target: string) => {
+    async (target: string, followed = false) => {
       if (!connId) return
+      // Only the newest request counts: a slow older one must not land on top of it.
+      const seq = ++loadSeq.current
       setLoading(true)
       setError(undefined)
       try {
         const real = await api.sftpRealpath(connId, target)
         const list = await api.sftpList(connId, real)
+        if (seq !== loadSeq.current) return
         setDir(real)
         setPathInput(real)
         setFiles(list)
         setSelected(new Set())
         lastDir.set(connId, real)
       } catch (err) {
-        setError(errorMessage(err))
+        if (seq !== loadSeq.current) return
+        // SFTP has its own login: after sudo -i the terminal can go where it can't.
+        setError(followed ? `Can't follow to ${target}: ${errorMessage(err)}` : errorMessage(err))
       } finally {
-        setLoading(false)
+        if (seq === loadSeq.current) setLoading(false)
       }
     },
     [connId]
@@ -78,9 +86,22 @@ export function SftpPanel(): JSX.Element {
     if (connId) void load(lastDir.get(connId) ?? '.')
   }, [connId, load])
 
+  const cwd = pane?.cwd
+  const cwdUser = pane?.cwdUser
   useEffect(() => {
-    if (follow && pane?.cwd && pane.cwd !== dir) void load(pane.cwd)
-  }, [follow, pane?.cwd])
+    if (!follow || !cwd || !connId) return
+    let stale = false
+    const go = async (): Promise<void> => {
+      const target = cwd.startsWith('~') ? expandHome(cwd, cwdUser, await api.sftpRealpath(connId, '.')) : cwd
+      if (stale) return
+      if (target !== dir) await load(target, true)
+      else setError(undefined) // back where the panel already is: an earlier "can't follow" is over
+    }
+    go().catch((err) => setError(errorMessage(err)))
+    return () => {
+      stale = true
+    }
+  }, [follow, cwd, cwdUser, connId])
 
   useEffect(() => api.onEdited((p) => toast(`Uploaded ${p}`)), [])
 
@@ -242,14 +263,15 @@ export function SftpPanel(): JSX.Element {
         <input value={pathInput} onChange={(e) => setPathInput(e.target.value)} />
       </form>
       <div className="sftp-options">
-        <label title="Follow the terminal's current folder (needs the shell to emit OSC 7)">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Follow terminal
+        <label title="Follow the terminal's folder, read from its prompt or from OSC 7">
+          <input type="checkbox" checked={follow} onChange={(e) => useStore.setState({ sftpFollow: e.target.checked })} /> Follow terminal
         </label>
         <label>
           <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Hidden
         </label>
       </div>
       {error && <div className="error-line">{error}</div>}
+      {follow && !cwd && !error && <div className="sftp-note muted small">Can't tell this terminal's folder: its prompt doesn't show the full path.</div>}
       <div className="sftp-list">
         <table>
           <thead>

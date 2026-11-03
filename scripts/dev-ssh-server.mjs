@@ -1,7 +1,7 @@
 // Minimal SSH server for developing Nixi without a real server.
 // Supports: password auth, PTY shell, exec, SFTP (rooted at a folder), -L / -D (direct-tcpip), -R (tcpip-forward).
 //
-//   node scripts/dev-ssh-server.mjs [--port 2222] [--user test] [--password test] [--root <dir>] [--authorized-key <file.pub>]
+//   node scripts/dev-ssh-server.mjs [--port 2222] [--user test] [--password test] [--root <dir>] [--no-seed] [--authorized-key <file.pub>]
 import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fsp, openSync, closeSync, readSync, writeSync, fstatSync } from 'fs'
 import { createServer as netServer, connect as netConnect } from 'net'
 import { join, resolve, posix } from 'path'
@@ -24,9 +24,12 @@ const ROOT = resolve(arg('root', join(tmpdir(), 'nixi-dev-sftp')))
 // Simulates a slow server/network: delay (ms) before accepting a login.
 const AUTH_DELAY = Number(arg('auth-delay', 0))
 const AUTHORIZED_KEY = arg('authorized-key') && utils.parseKey(readFileSync(arg('authorized-key')))
-mkdirSync(ROOT, { recursive: true })
-if (!existsSync(join(ROOT, 'hello.txt'))) writeFileSync(join(ROOT, 'hello.txt'), 'Hello from the dev SSH server\n')
-mkdirSync(join(ROOT, 'folder'), { recursive: true })
+// --no-seed: leave the root as it is (for --root /, where paths match the real shell's).
+if (!process.argv.includes('--no-seed')) {
+  mkdirSync(ROOT, { recursive: true })
+  if (!existsSync(join(ROOT, 'hello.txt'))) writeFileSync(join(ROOT, 'hello.txt'), 'Hello from the dev SSH server\n')
+  mkdirSync(join(ROOT, 'folder'), { recursive: true })
+}
 
 const keyFile = join(tmpdir(), 'nixi-dev-hostkey')
 if (!existsSync(keyFile)) writeFileSync(keyFile, utils.generateKeyPairSync('ed25519').private)

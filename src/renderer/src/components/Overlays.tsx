@@ -10,6 +10,7 @@ export function Modal(props: {
   children: ReactNode
   footer?: ReactNode
   wide?: boolean
+  className?: string
 }): JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -20,7 +21,7 @@ export function Modal(props: {
   }, [props.onClose])
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div className={`modal ${props.wide ? 'wide' : ''}`}>
+      <div className={`modal ${props.wide ? 'wide' : ''} ${props.className ?? ''}`}>
         <div className="modal-header">
           <span>{props.title}</span>
           <button className="icon" onClick={props.onClose} title="Close">

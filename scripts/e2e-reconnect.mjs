@@ -297,6 +297,7 @@ try {
 
   console.log('--- the setting')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu:cmd', 'settings'))
+  await win.locator('.settings-nav button', { hasText: 'Connections' }).click()
   const box = win.locator('.modal label.check', { hasText: 'Reconnect by itself' }).locator('input')
   check('on by default', await box.isChecked())
   await box.uncheck()

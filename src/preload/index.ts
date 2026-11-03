@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
+import type { AiAnswer, AiEvent, AiMessageInput, Attachment, AiModelInfo, AiProviderId } from '@shared/ai'
 import type {
   ConflictMode,
   ConnStatus,
@@ -128,11 +129,25 @@ const api = {
   sftpCancel: (tid: string): Promise<void> => invoke('sftp:cancel', tid),
   sftpEdit: (id: string, p: string): Promise<void> => invoke('sftp:edit', id, p),
   onTransfer: (cb: (t: Transfer) => void) => on('sftp:transfer', cb),
+
+  aiIsReady: (): Promise<boolean> => invoke('ai:isReady'),
+  aiHasKey: (provider: AiProviderId): Promise<boolean> => invoke('ai:hasKey', provider),
+  aiModels: (target: { provider: AiProviderId; baseUrl?: string }, key?: string): Promise<AiModelInfo[]> => invoke('ai:models', target, key),
+  setSecureInput: (on: boolean): Promise<void> => invoke('keyboard:secureInput', on),
+  aiSetKey: (provider: AiProviderId, key: string | null): Promise<void> => invoke('ai:setKey', provider, key),
+  aiTestKey: (target: { provider: AiProviderId; baseUrl?: string }, key?: string): Promise<void> => invoke('ai:testKey', target, key),
+  aiPreview: (raw: string): Promise<Attachment> => invoke('ai:preview', raw),
+  aiSend: (chatId: string, message: AiMessageInput): Promise<string> => invoke('ai:send', chatId, message),
+  aiAnswer: (chatId: string, id: string, answer: AiAnswer): Promise<void> => invoke('ai:answer', chatId, id, answer),
+  aiStop: (chatId: string): Promise<void> => invoke('ai:stop', chatId),
+  aiClear: (chatId: string): Promise<void> => invoke('ai:clear', chatId),
+  onAiEvent: (cb: (chatId: string, event: AiEvent) => void) => on('ai:event', cb),
+
   onEdited: (cb: (path: string) => void) => on('sftp:edited', cb),
   pathForFile: (f: File): string => webUtils.getPathForFile(f),
 
   listTunnels: (): Promise<{ tunnels: Tunnel[]; statuses: TunnelStatus[] }> => invoke('tunnels:list'),
-  saveTunnels: (t: Tunnel[]): Promise<Tunnel[]> => invoke('tunnels:save', t),
+  saveTunnels: (t: Tunnel[], passwords?: Record<string, string>): Promise<Tunnel[]> => invoke('tunnels:save', t, passwords),
   startTunnel: (id: string): Promise<void> => invoke('tunnels:start', id),
   stopTunnel: (id: string): Promise<void> => invoke('tunnels:stop', id),
   onTunnelStatus: (cb: (s: TunnelStatus) => void) => on('tunnel:status', cb),
