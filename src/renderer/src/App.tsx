@@ -19,6 +19,7 @@ import { AboutLine } from './components/AboutLine'
 import { MacroPicker } from './components/MacroPicker'
 import { HeartIcon } from './components/Icons'
 import { ChoiceDialog, ContextMenu, PromptDialog, ReportDialog, Toast } from './components/Overlays'
+import { foldedExceptFirst } from '@shared/parse'
 
 export function App(): JSX.Element {
   const settings = useStore((s) => s.settings)
@@ -45,6 +46,7 @@ export function App(): JSX.Element {
           sessions,
           credentials,
           folders,
+          collapsedFolders: foldedExceptFirst(sessions, folders),
           macros,
           tunnels,
           tunnelStatus: Object.fromEntries(statuses.map((s) => [s.id, s]))

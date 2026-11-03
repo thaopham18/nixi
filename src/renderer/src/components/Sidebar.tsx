@@ -54,7 +54,9 @@ function SessionTree(): JSX.Element {
   const sessions = useStore((s) => s.sessions)
   const folders = useStore((s) => s.folders)
   const [filter, setFilter] = useState('')
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const collapsed = useStore((s) => s.collapsedFolders)
+  const setCollapsed = (change: (c: Record<string, boolean>) => Record<string, boolean>): void =>
+    useStore.setState((s) => ({ collapsedFolders: change(s.collapsedFolders) }))
   /** selected sessions; `anchor` is where a Shift+click range starts */
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const anchor = useRef<string>()
@@ -254,6 +256,7 @@ function SessionTree(): JSX.Element {
       {f.path && (
         <div
           className={`tree-row folder ${dropFolder === f.path ? 'drop-into' : ''}`}
+          aria-expanded={!collapsed[f.path] || !!filter}
           style={{ paddingLeft: 8 + (depth - 1) * 14 }}
           onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !c[f.path] }))}
           onContextMenu={(e) => folderMenu(e, f)}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseName, buildTree, formatMode, parentRemote, parseSshConfig, withRandomSuffix, splitDomainUser } from '../src/shared/parse'
+import { baseName, buildTree, foldedExceptFirst, formatMode, parentRemote, parseSshConfig, withRandomSuffix, splitDomainUser } from '../src/shared/parse'
 
 describe('parseSshConfig', () => {
   it('reads concrete hosts and ignores wildcards', () => {
@@ -86,6 +86,20 @@ describe('withRandomSuffix', () => {
   })
   it('defaults to a random 5-digit number', () => {
     for (let i = 0; i < 20; i++) expect(withRandomSuffix('a.txt', false)).toMatch(/^a-\d{5}\.txt$/)
+  })
+})
+
+describe('foldedExceptFirst', () => {
+  const at = (folder: string) => ({ folder, name: 's' })
+
+  it('closes every folder but the first at the top level, and that one\'s subfolders', () => {
+    expect(foldedExceptFirst([at('Prod/DB'), at('Dev'), at('')], ['Lab/Empty'])).toEqual({ Lab: true, 'Lab/Empty': true, Prod: true, 'Prod/DB': true })
+    expect(foldedExceptFirst([at('Alpha/One'), at('Beta')])).toEqual({ 'Alpha/One': true, Beta: true })
+  })
+
+  it('has nothing to close without folders', () => {
+    expect(foldedExceptFirst([at('')])).toEqual({})
+    expect(foldedExceptFirst([])).toEqual({})
   })
 })
 

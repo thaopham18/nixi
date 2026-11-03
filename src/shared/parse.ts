@@ -78,6 +78,21 @@ export function buildTree<T extends { folder: string; name: string }>(items: T[]
   return root
 }
 
+/** How a database opens: every folder closed except the first one at the top level. */
+export function foldedExceptFirst<T extends { folder: string; name: string }>(items: T[], folders: string[] = []): Record<string, boolean> {
+  const folded: Record<string, boolean> = {}
+  const walk = (node: FolderNode<T>): void => {
+    for (const f of node.folders) {
+      folded[f.path] = true
+      walk(f)
+    }
+  }
+  const root = buildTree(items, folders)
+  walk(root)
+  if (root.folders[0]) delete folded[root.folders[0].path]
+  return folded
+}
+
 /** Format a POSIX mode as "drwxr-xr-x". */
 export function formatMode(mode: number, isDir: boolean): string {
   const chars = 'rwxrwxrwx'

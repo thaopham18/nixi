@@ -33,6 +33,7 @@ try {
   const win = await app.firstWindow()
   win.on('dialog', (d) => d.accept())
   await win.waitForSelector('.tree-row')
+  await win.locator('.tree-row.folder', { hasText: 'Sub' }).click()
   for (const n of ['srv-a', 'srv-b', 'srv-c']) {
     await win.locator('.tree-row', { hasText: n }).last().dblclick()
     await win.locator('.tab.active .dot.connected').waitFor({ timeout: 15000 })

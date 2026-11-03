@@ -51,6 +51,7 @@ try {
   await sleep(200)
   await win.screenshot({ path: join(tmpdir(), `${prefix}-menu.png`) })
   await win.keyboard.press('Escape')
+  await win.locator('.tree-row.folder', { hasText: 'Prod' }).click()
   await win.locator('.tree-row', { hasText: 'web-01' }).click({ button: 'right' })
   await win.locator('.context-menu .item', { hasText: 'Edit…' }).click()
   await sleep(300)

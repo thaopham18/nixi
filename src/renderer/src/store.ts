@@ -73,6 +73,8 @@ interface State {
   credentials: Credential[]
   /** folders that exist without sessions too (see buildTree) */
   folders: string[]
+  /** closed folders of the session tree; kept here so switching to the SFTP tab doesn't reset them */
+  collapsedFolders: Record<string, boolean>
   macros: Macro[]
   tunnels: Tunnel[]
   tunnelStatus: Record<string, TunnelStatus>
@@ -131,6 +133,7 @@ export const useStore = create<State>((set, get) => ({
   sessions: [],
   credentials: [],
   folders: [],
+  collapsedFolders: {},
   macros: [],
   tunnels: [],
   tunnelStatus: {},
