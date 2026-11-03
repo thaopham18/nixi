@@ -20,7 +20,7 @@ function latestUserText(messages) {
   return last.content.map((b) => (b.type === 'text' ? b.text : b.type === 'tool_result' ? String(b.content) : '')).join('\n')
 }
 
-const OPENAI_PATH = /^\/(v1beta\/openai|custom\/v1|noopts\/v1|moved\/v1)\/(models|chat\/completions)$/
+const OPENAI_PATH = /^\/(v1beta\/openai|custom\/v1|one\/v1|noopts\/v1|moved\/v1)\/(models|chat\/completions)$/
 const SIGNATURE = 'gemini-signature-kept-as-is'
 
 function openAiLatest(messages) {
@@ -44,7 +44,7 @@ function openAi(req, res, state, api, route) {
   if (route === 'models') {
     state.modelChecks.push({ key, url: req.url })
     if (state.failModels) return fail(500, 'list is down')
-    const data = api === 'v1beta/openai' ? ['models/gemini-new-9', 'models/gemini-3.8-flash', 'models/gemini-new-9-tts', 'models/text-embedding-9'] : ['local-1', 'local-2']
+    const data = api === 'one/v1' ? ['only-model'] : api === 'v1beta/openai' ? ['models/gemini-new-9', 'models/gemini-3.8-flash', 'models/gemini-new-9-tts', 'models/text-embedding-9'] : ['local-1', 'local-2']
     return json(200, { object: 'list', data: data.map((id) => ({ id, object: 'model' })) })
   }
   let raw = ''

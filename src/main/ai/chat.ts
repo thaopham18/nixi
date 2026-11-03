@@ -122,9 +122,6 @@ function withAttachment(text: string, attachment: AiMessageInput['attachment']):
 /** `rollback`: where the history goes back to if the provider won't take the message. */
 async function run(chatId: string, chat: Chat, active: Active, rollback: number | undefined): Promise<void> {
   const apiKey = getSecret(keyName(active.id)) ?? ''
-  if (!apiKey && needsKey(active.id)) return emit(chatId, { type: 'failed', message: 'Add an API key in Settings first.', rolledBack: false })
-  const model = aiModelOf(getSettings())
-  if (!model) return emit(chatId, { type: 'failed', message: 'Pick a model in Settings first.', rolledBack: false })
   const { provider } = active
   const abort = new AbortController()
   chat.abort = abort
@@ -136,6 +133,15 @@ async function run(chatId: string, chat: Chat, active: Active, rollback: number 
   }
   emit(chatId, { type: 'busy', on: true })
   try {
+    if (!apiKey && needsKey(active.id)) return void emit(chatId, { type: 'failed', message: 'Add an API key in Settings first.', rolledBack: undo() })
+    let model = aiModelOf(getSettings())
+    if (!model) {
+      // A server with one model leaves nothing to choose. With more, cost and quality are the user's call.
+      const models = await provider.listModels(apiKey).catch(() => [])
+      if (!current()) return
+      if (models.length !== 1) return void emit(chatId, { type: 'failed', message: 'Pick a model in Settings first.', rolledBack: undo() })
+      model = models[0].id
+    }
     for (let n = 0; n < MAX_TURNS; n++) {
       const turn = await provider.turn({
         apiKey,

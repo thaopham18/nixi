@@ -99,7 +99,7 @@ function AiModelField({ s, set, target, refresh }: { s: Settings; set: <K extend
       const models = await api.aiModels(target)
       if (n !== asked.current) return
       setFetched(models)
-      setStatus({ text: models.length ? `${models.length} models available to this key.` : 'The server lists no models: type the name of one.' })
+      setStatus({ text: models.length ? `${models.length} ${models.length === 1 ? 'model' : 'models'} available.` : 'The server lists no models: type the name of one.' })
     } catch (err) {
       if (n !== asked.current) return
       setFetched(undefined)
@@ -113,6 +113,10 @@ function AiModelField({ s, set, target, refresh }: { s: Settings; set: <K extend
     void load()
   }, [info.id, target.baseUrl, refresh])
   const setModel = (id: string): void => set('aiModels', { ...s.aiModels, [info.id]: id })
+  // A select shows its first option even with nothing chosen, and picking the only one changes nothing.
+  useEffect(() => {
+    if (!model && fetched?.length === 1) setModel(fetched[0].id)
+  }, [fetched, model])
   const known = fetched?.length ? fetched : info.models
   const listed = known.some((m) => m.id === model)
   const free = typing || !known.length || (!!model && !listed)
@@ -130,6 +134,11 @@ function AiModelField({ s, set, target, refresh }: { s: Settings; set: <K extend
                 if (e.target.value !== OTHER_MODEL) setModel(e.target.value)
               }}
             >
+              {!model && !free && (
+                <option value="" disabled>
+                  Choose a model…
+                </option>
+              )}
               {known.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label ?? m.id}

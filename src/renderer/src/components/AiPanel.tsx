@@ -1,10 +1,11 @@
-import { aiModelOf, aiProviderInfo } from '@shared/ai'
+import { AI_PROVIDERS, aiModelOf, aiProviderInfo, type AiModelInfo, type AiProviderId } from '@shared/ai'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '@shared/ai'
 import { api } from '../api'
-import { activePaneOf, useStore, openSettings } from '../store'
+import { activePaneOf, askChoice, useStore, openSettings } from '../store'
 import { answerProposal, clearChat, EMPTY_CHAT, GENERAL_CHAT, outputOf, runProposal, sendAi, setAutoRun, stopAi, updateChat, type AiItem } from '../ai'
 import { attachableText, focusTerminal, runBlock } from '../terminals'
+import { ToolIcon } from './Icons'
 
 const REFRESH_MS = 1000
 const DONE_NOTE: Partial<Record<Extract<AiItem, { kind: 'proposal' }>['state'], string>> = {
@@ -229,6 +230,139 @@ function Composer({ chatId, paneId, busy, draft }: { chatId: string; paneId?: st
   )
 }
 
+/** Which AI this chat talks to, and the way to change it without going through Settings. */
+function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tokens: number }): JSX.Element | null {
+  const settings = useStore((s) => s.settings)
+  const hasHistory = useStore((s) => (s.aiChats[chatId]?.items.length ?? 0) > 0)
+  const current = aiProviderInfo(settings?.aiProvider)
+  const model = aiModelOf(settings)
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<AiProviderId>(current.id)
+  const [view, setView] = useState<{ ready: boolean; models: AiModelInfo[]; note?: string } | undefined>()
+  const box = useRef<HTMLDivElement>(null)
+  const baseUrl = settings?.aiBaseUrl ?? ''
+
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    const info = aiProviderInfo(tab)
+    setView(undefined)
+    const look = async (): Promise<void> => {
+      const ready = info.id === 'custom' ? !!baseUrl.trim() : await api.aiHasKey(info.id)
+      if (!ready) return live ? setView({ ready, models: [] }) : undefined
+      const models = await api.aiModels({ provider: info.id, baseUrl: info.id === 'custom' ? baseUrl : '' }).then(
+        (list) => ({ models: list.length ? list : info.models }),
+        () => ({ models: info.models, note: 'Could not get the list of models.' })
+      )
+      if (live) setView({ ready, ...models })
+    }
+    void look()
+    const away = (e: MouseEvent): void => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const esc = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', away)
+    window.addEventListener('keydown', esc)
+    return () => {
+      live = false
+      window.removeEventListener('mousedown', away)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [open, tab, baseUrl])
+
+  if (!settings) return null
+
+  /** False when the user would rather keep the chat. */
+  const choose = async (provider: AiProviderId, id?: string): Promise<boolean> => {
+    const moved = provider !== current.id
+    if (moved && hasHistory) {
+      const label = aiProviderInfo(provider).label
+      const answer = await askChoice({
+        title: `Switch to ${label}?`,
+        message: `A chat stays with one AI, so this one will be cleared. Nothing from it goes to ${label}.`,
+        buttons: [
+          { label: 'Cancel', value: 'no' },
+          { label: 'Switch', value: 'yes', primary: true }
+        ]
+      })
+      if (answer !== 'yes') return false
+    }
+    const next = await api.setSettings({ ...settings, aiProvider: provider, aiModels: id ? { ...settings.aiModels, [provider]: id } : settings.aiModels })
+    useStore.setState({ settings: next })
+    if (moved) clearChat(chatId)
+    setOpen(false)
+    return true
+  }
+
+  const info = aiProviderInfo(tab)
+  const chosen = aiModelOf({ ...settings, aiProvider: info.id })
+  return (
+    <div className="ai-picker" ref={box}>
+      <button
+        className="ai-model"
+        title={`${current.label} · ${model || 'no model chosen'}`}
+        aria-expanded={open}
+        disabled={busy}
+        onClick={() => {
+          setTab(current.id)
+          setOpen(!open)
+        }}
+      >
+        <span className="ai-model-text">
+          {current.label} · {model || <span className="ai-no-model">choose a model</span>}
+        </span>
+        <ToolIcon name="chevDown" />
+      </button>
+      {tokens > 0 && <span className="ai-tokens">{tokens.toLocaleString('en-US')} tokens</span>}
+      {open && (
+        <div className="ai-picker-menu">
+          <div className="type-picker" role="radiogroup" aria-label="AI provider">
+            {AI_PROVIDERS.map((p) => (
+              <button key={p.id} role="radio" aria-checked={p.id === tab} className={p.id === tab ? 'active' : ''} onClick={() => setTab(p.id)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {!view && <p className="muted small">Looking…</p>}
+          {view && !view.ready && (
+            <>
+              <p className="muted small">{info.id === 'custom' ? 'No server set up yet.' : `No ${info.label} API key yet.`}</p>
+              <button
+                className="primary"
+                onClick={() => void choose(info.id).then((done) => done && openSettings('ai', info.id === 'custom' ? 'aiBaseUrl' : 'aiKey'))}
+              >
+                {info.id === 'custom' ? 'Set up server' : 'Add API key'}
+              </button>
+            </>
+          )}
+          {view?.ready && (
+            <div className="ai-picker-models" role="listbox" aria-label="Model">
+              {view.models.map((m) => (
+                <button key={m.id} role="option" aria-selected={info.id === current.id && m.id === chosen} className={info.id === current.id && m.id === chosen ? 'active' : ''} title={m.id} onClick={() => void choose(info.id, m.id)}>
+                  {m.label ?? m.id}
+                </button>
+              ))}
+              {!view.models.length && <p className="muted small">The server lists no models. Type the name of one in Settings.</p>}
+            </div>
+          )}
+          {view?.note && <p className="muted small">{view.note}</p>}
+          <button
+            className="link"
+            onClick={() => {
+              setOpen(false)
+              openSettings('ai', 'aiModel')
+            }}
+          >
+            AI settings…
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AiPanel(): JSX.Element {
   const paneId = useStore((s) => activePaneOf(s)?.id)
   const chatId = paneId ?? GENERAL_CHAT
@@ -242,7 +376,7 @@ export function AiPanel(): JSX.Element {
   const list = useRef<HTMLDivElement>(null)
 
   // The key is set in Settings, so look again when a dialog closes.
-  useEffect(() => void api.aiIsReady().then(setHasKey), [modal])
+  useEffect(() => void api.aiIsReady().then(setHasKey), [modal, provider.id, aiSettings?.aiBaseUrl])
 
   // Follow the newest item, unless the user scrolled up to read. Decided before the new item lands:
   // a card with Run on it can be taller than any "near the bottom" margin.
@@ -269,6 +403,9 @@ export function AiPanel(): JSX.Element {
             {provider.id === 'custom' ? 'Set up server' : 'Add API key'}
           </button>
         </div>
+        <div className="ai-meta muted small">
+          <AiPicker chatId={chatId} busy={false} tokens={0} />
+        </div>
       </div>
     )
 
@@ -278,7 +415,7 @@ export function AiPanel(): JSX.Element {
       <div className="ai-list" ref={list} onScroll={onScroll}>
         {chat.items.length === 0 && (
           <div className="empty">
-            <p>Nothing leaves this computer until you send a message, and then it goes to {provider.id === 'custom' ? 'your server' : provider.label} ({model}). {settingsAuto ? 'In Auto, AI runs commands that only look and reads the output. Anything else waits for Run.' : 'Commands run only when you click Run.'}</p>
+            <p>Nothing leaves this computer until you send a message, and then it goes to {provider.id === 'custom' ? 'your server' : provider.label} ({model || 'no model chosen yet'}). {settingsAuto ? 'In Auto, AI runs commands that only look and reads the output. Anything else waits for Run.' : 'Commands run only when you click Run.'}</p>
           </div>
         )}
         {chat.items.map((item, i) => (
@@ -286,12 +423,9 @@ export function AiPanel(): JSX.Element {
         ))}
         {thinking && <div className="ai-notice muted small">Thinking…</div>}
       </div>
-      {(chat.items.length > 0 || chat.tokens > 0) && (
-        <div className="ai-meta muted small">
-          <span className="ai-model" title={model}>
-            {model}
-            {chat.tokens ? ` · ${chat.tokens.toLocaleString('en-US')} tokens` : ''}
-          </span>
+      <div className="ai-meta muted small">
+        <AiPicker chatId={chatId} busy={chat.busy || chat.running} tokens={chat.tokens} />
+        {chat.items.length > 0 && (
           <button
             className="link"
             onClick={() => {
@@ -301,8 +435,8 @@ export function AiPanel(): JSX.Element {
           >
             Clear
           </button>
-        </div>
-      )}
+        )}
+      </div>
       {/* Remounted per pane: the preview and the Attach choice belong to one terminal. */}
       <Composer key={chatId} chatId={chatId} paneId={paneId} busy={chat.busy || chat.running} draft={chat.draft} />
     </div>
