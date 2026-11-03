@@ -368,6 +368,27 @@ html.fullscreen .lock-screen {
 .tree-row.selected {
   background: var(--sel);
 }
+.tree-row.dragging {
+  opacity: 0.5;
+}
+/* Where dragged sessions would land: a folder, or the list itself for the top level. */
+.tree-row.folder.drop-into {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tree.drop-into {
+  box-shadow: inset 0 0 0 1px var(--accent);
+  border-radius: var(--radius-xs);
+}
+.drag-badge {
+  position: fixed;
+  top: -100px;
+  left: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+}
 .tree-row.folder {
   font-weight: 500;
 }
@@ -1007,6 +1028,7 @@ body.resizing .vnc-display {
   line-height: 1.5;
 }
 .choice-items {
+  overflow-wrap: anywhere;
   margin: 0;
   padding-left: 18px;
   font-size: 12px;

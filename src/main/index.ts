@@ -106,6 +106,7 @@ function buildMenu(): void {
         item('Toggle Sidebar', 'CmdOrCtrl+B', 'toggleSidebar'),
         item('Toggle SFTP Panel', 'CmdOrCtrl+Shift+F', 'toggleSftp'),
         item('Tunnels', 'CmdOrCtrl+Shift+U', 'tunnels'),
+        item('Credentials', 'CmdOrCtrl+Shift+K', 'credentials'),
         item('Macros', 'CmdOrCtrl+Shift+M', 'macros'),
         {
           // The key is the user's choice (Settings) and handled by the renderer; the menu only shows it.

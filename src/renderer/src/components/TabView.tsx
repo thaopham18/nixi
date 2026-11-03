@@ -137,8 +137,9 @@ function DropZones({ tab }: { tab: Tab }): JSX.Element | null {
     s.set({ dragging: undefined })
     if (dragging.kind === 'tab') s.mergeTab(dragging.id, tab.id, z.layout, z.prepend)
     else {
-      const session = s.sessions.find((x) => x.id === dragging.id)
-      if (session) openSessionInSplit(session, tab.id, z.layout, z.prepend)
+      // In tree order; the zone applies to the first, from three panes on the view tiles anyway.
+      const dropped = s.sessions.filter((x) => (dragging.ids ?? [dragging.id]).includes(x.id))
+      dropped.forEach((session, i) => openSessionInSplit(session, tab.id, i ? undefined : z.layout, z.prepend))
     }
   }
   return (

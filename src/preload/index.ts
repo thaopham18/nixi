@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type {
   ConflictMode,
   ConnStatus,
+  Credential,
+  CredentialInput,
   Macro,
   OpenConnRequest,
   OpenConnResult,
@@ -74,6 +76,11 @@ const api = {
   saveSession: (s: SessionInput): Promise<Session[]> => invoke('sessions:save', s),
   saveSessions: (s: Session[]): Promise<Session[]> => invoke('sessions:saveAll', s),
   deleteSession: (ids: string | string[]): Promise<Session[]> => invoke('sessions:delete', ids),
+  listCredentials: (): Promise<Credential[]> => invoke('credentials:list'),
+  /** resolve to both lists: a session's login comes from its credential */
+  saveCredential: (c: CredentialInput): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:save', c),
+  deleteCredential: (id: string): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:delete', id),
+  credentialSecret: (id: string): Promise<string | undefined> => invoke('credentials:secret', id),
   importSshConfig: (): Promise<{ added: number; sessions: Session[] }> => invoke('sessions:importSshConfig'),
   importSessions: (): Promise<Session[]> => invoke('sessions:import'),
   exportSessions: (): Promise<boolean> => invoke('sessions:export'),

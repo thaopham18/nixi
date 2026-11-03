@@ -68,6 +68,7 @@ export function findLegacyData(): LegacyImport | undefined {
   const data: DbData = {
     settings: readJson(dir, 'settings.json', {}),
     sessions: readJson(dir, 'sessions.json', []),
+    credentials: [],
     tunnels: readJson(dir, 'tunnels.json', []),
     macros: readJson(dir, 'macros.json', []),
     folders: [],

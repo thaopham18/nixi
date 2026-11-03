@@ -21,6 +21,19 @@ export function SessionDialog(): JSX.Element {
     [sessions, emptyFolders]
   )
   const jumpCandidates = sessions.filter((s) => s.type === 'ssh' && s.id !== form.id)
+  const allCredentials = useStore((s) => s.credentials)
+  const credentials = allCredentials.filter((c) => c.kind === 'password' || form.type === 'ssh')
+  const credential = credentials.find((c) => c.id === form.credentialId)
+  const useCredential = (id: string): void => {
+    const c = credentials.find((x) => x.id === id)
+    setSecret('')
+    setForm((f) =>
+      c
+        ? { ...f, credentialId: c.id, username: c.username, hasSecret: c.hasSecret, clearSecret: false, ...(f.type === 'ssh' ? { auth: c.kind, privateKeyPath: c.privateKeyPath } : {}) }
+        : // A linked session has no password of its own (it asks on connect until it gets one).
+          { ...f, credentialId: undefined, hasSecret: editing.credentialId ? false : editing.hasSecret }
+    )
+  }
 
   const set = <K extends keyof SessionInput>(k: K, v: SessionInput[K]): void => setForm((f) => ({ ...f, [k]: v }))
   const close = (): void => useStore.setState({ modal: null, editingSession: undefined })
@@ -82,7 +95,15 @@ export function SessionDialog(): JSX.Element {
           <button
             key={t}
             className={form.type === t ? 'active' : ''}
-            onClick={() => setForm((f) => ({ ...f, type: t, port: { ssh: 22, telnet: 23, rdp: 3389, vnc: 5900, local: undefined }[t] }))}
+            onClick={() =>
+              setForm((f) => ({
+                ...f,
+                type: t,
+                port: { ssh: 22, telnet: 23, rdp: 3389, vnc: 5900, local: undefined }[t],
+                // A private key only works for SSH.
+                credentialId: t !== 'ssh' && allCredentials.find((c) => c.id === f.credentialId)?.kind === 'key' ? undefined : f.credentialId
+              }))
+            }
           >
             <SessionIcon type={t} />
             {{ ssh: 'SSH', telnet: 'Telnet', local: 'Local shell', rdp: 'RDP', vnc: 'VNC' }[t]}
@@ -117,10 +138,25 @@ export function SessionDialog(): JSX.Element {
               <input type="number" value={form.port ?? ''} onChange={(e) => set('port', Number(e.target.value) || undefined)} />
             </label>
           </div>
+          {(credentials.length > 0 || credential) && (
+            <label className="field">
+              <span>Credential</span>
+              <select name="credential" value={form.credentialId ?? ''} onChange={(e) => useCredential(e.target.value)}>
+                <option value="">— none, this session has its own login —</option>
+                {credentials.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.username ? ` (${c.username})` : ''}
+                  </option>
+                ))}
+              </select>
+              {credential && <span className="muted small">Changing the credential changes it for every session that uses it.</span>}
+            </label>
+          )}
           <div className="grid2">
             <label className="field">
               <span>Username{form.type === 'telnet' ? ' (optional, auto-login)' : form.type === 'vnc' ? ' (if the server asks)' : ''}</span>
-              <input value={form.username ?? ''} onChange={(e) => set('username', e.target.value)} />
+              <input name="username" disabled={Boolean(credential)} value={form.username ?? ''} onChange={(e) => set('username', e.target.value)} />
             </label>
             {form.type === 'telnet' ? (
               <label className="field">
@@ -133,7 +169,7 @@ export function SessionDialog(): JSX.Element {
             ) : form.type === 'ssh' ? (
               <label className="field">
                 <span>Authentication</span>
-                <select value={form.auth ?? 'password'} onChange={(e) => set('auth', e.target.value as Session['auth'])}>
+                <select disabled={Boolean(credential)} value={form.auth ?? 'password'} onChange={(e) => set('auth', e.target.value as Session['auth'])}>
                   <option value="password">Password</option>
                   <option value="key">Private key</option>
                   <option value="agent">SSH agent</option>
@@ -160,7 +196,7 @@ export function SessionDialog(): JSX.Element {
 
       {form.type === 'telnet' && (
         <>
-          {secretField}
+          {!credential && secretField}
           <label className="field">
             <span>Command after login (optional)</span>
             <input value={form.startupCommand ?? ''} onChange={(e) => set('startupCommand', e.target.value)} placeholder="e.g. terminal length 0" />
@@ -174,7 +210,7 @@ export function SessionDialog(): JSX.Element {
 
       {form.type === 'ssh' && (
         <>
-          {form.auth === 'key' && (
+          {form.auth === 'key' && !credential && (
             <label className="field">
               <span>Private key file</span>
               <div className="row">
@@ -183,7 +219,7 @@ export function SessionDialog(): JSX.Element {
               </div>
             </label>
           )}
-          {form.auth !== 'agent' && secretField}
+          {form.auth !== 'agent' && !credential && secretField}
           <details>
             <summary>Advanced</summary>
             <div className="grid2">
@@ -226,7 +262,7 @@ export function SessionDialog(): JSX.Element {
 
       {form.type === 'rdp' && (
         <>
-          {secretField}
+          {!credential && secretField}
           <div className="field">
             <span>Open with</span>
             <div className="type-picker">
@@ -262,7 +298,7 @@ export function SessionDialog(): JSX.Element {
 
       {form.type === 'vnc' && (
         <>
-          {secretField}
+          {!credential && secretField}
           <label className="field">
             <span>Connect through SSH (optional)</span>
             <select value={form.jumpSessionId ?? ''} onChange={(e) => set('jumpSessionId', e.target.value || undefined)}>

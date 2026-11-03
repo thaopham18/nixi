@@ -2,8 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { Client, type ConnectConfig } from 'ssh2'
 import type { Session } from '@shared/types'
-import { getSecret } from '../store/secrets'
-import { getSession } from '../store/stores'
+import { getSession, sessionSecret } from '../store/stores'
 import { verifyHostKey } from '../store/known-hosts'
 
 export interface SshTarget {
@@ -43,7 +42,7 @@ export function targetFromSession(session: Session, typed: { username?: string; 
     username: typed.username || session.username || process.env.USER || process.env.USERNAME || 'root',
     auth: session.auth || 'password',
     privateKeyPath: session.privateKeyPath,
-    secret: typed.password ?? getSecret(session.id),
+    secret: typed.password ?? sessionSecret(session),
     keepaliveSec: session.keepaliveSec,
     jump
   }

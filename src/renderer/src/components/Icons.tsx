@@ -83,7 +83,7 @@ export function Caret({ open }: { open: boolean }): JSX.Element {
   )
 }
 
-type ToolName = 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
+type ToolName = 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
 
 const toolPaths: Record<ToolName, JSX.Element> = {
   up: <path d="M8 13V3.5M3.8 7.7 8 3.5l4.2 4.2" />,
@@ -110,6 +110,12 @@ const toolPaths: Record<ToolName, JSX.Element> = {
   ),
   tunnel: <path d="M2.5 5.5h10m-2.5-2.5 2.5 2.5-2.5 2.5M13.5 10.5h-10m2.5-2.5-2.5 2.5 2.5 2.5" />,
   bolt: <path d="M9 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" />,
+  key: (
+    <>
+      <circle cx="5.4" cy="10.6" r="2.9" />
+      <path d="m7.5 8.5 5.7-5.7M10.8 5.2l1.9 1.9M9.2 6.8l1.4 1.4" />
+    </>
+  ),
   multi: (
     <>
       <rect x="4.8" y="4.8" width="9" height="8.4" rx="1.6" />

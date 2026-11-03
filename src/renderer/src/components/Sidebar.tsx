@@ -55,7 +55,13 @@ function SessionTree(): JSX.Element {
   const folders = useStore((s) => s.folders)
   const [filter, setFilter] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [dragId, setDragId] = useState<string>()
+  /** selected sessions; `anchor` is where a Shift+click range starts */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const anchor = useRef<string>()
+  /** the sessions being dragged inside this tree */
+  const [dragIds, setDragIds] = useState<string[]>()
+  /** folder under the pointer during a drag ('' = top level) */
+  const [dropFolder, setDropFolder] = useState<string>()
 
   const filtered = useMemo(() => {
     const q = filter.toLowerCase()
@@ -104,8 +110,70 @@ function SessionTree(): JSX.Element {
     ])
   }
 
-  const moveTo = (id: string, folder: string): void => {
-    void save(sessions.map((s) => (s.id === id ? { ...s, folder } : s)))
+  /** Sessions as listed on screen, top to bottom: what a Shift+click range covers. */
+  const visibleIds = (f: FolderNode<Session>): string[] =>
+    !f.path || !collapsed[f.path] || filter ? [...f.folders.flatMap(visibleIds), ...f.items.map((s) => s.id)] : []
+
+  const clickRow = (e: React.MouseEvent, s: Session): void => {
+    if (e.shiftKey && anchor.current) {
+      const ids = visibleIds(tree)
+      const [a, b] = [ids.indexOf(anchor.current), ids.indexOf(s.id)]
+      if (a >= 0 && b >= 0) return setSelected(new Set(ids.slice(Math.min(a, b), Math.max(a, b) + 1)))
+    }
+    anchor.current = s.id
+    if (e.metaKey || e.ctrlKey) {
+      const next = new Set(selected)
+      if (!next.delete(s.id)) next.add(s.id)
+      setSelected(next)
+    } else setSelected(new Set([s.id]))
+  }
+
+  /** Move the dragged sessions into a folder, and open it so they stay in sight. */
+  const dropInto = (folder: string): void => {
+    const ids = dragIds
+    setDragIds(undefined)
+    setDropFolder(undefined)
+    if (!ids) return
+    const moved = new Set(ids)
+    if (sessions.some((s) => moved.has(s.id) && s.folder !== folder)) void save(sessions.map((s) => (moved.has(s.id) ? { ...s, folder } : s)))
+    // Every folder above it too, or the sessions would land out of sight.
+    const parts = folder.split('/')
+    setCollapsed((c) => ({ ...c, ...Object.fromEntries(parts.map((_p, i) => [parts.slice(0, i + 1).join('/'), false])) }))
+    useStore.setState({ dragging: undefined })
+  }
+
+  const hoverDrop = (e: React.DragEvent, folder: string): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (dragIds && dropFolder !== folder) setDropFolder(folder)
+  }
+
+  /** The one thing a drag image must say: how many. */
+  const dragBadge = (e: React.DragEvent, count: number): void => {
+    const badge = document.createElement('div')
+    badge.className = 'drag-badge'
+    badge.textContent = `${count} sessions`
+    document.body.appendChild(badge)
+    e.dataTransfer.setDragImage(badge, 10, 10)
+    setTimeout(() => badge.remove(), 0)
+  }
+
+  /** Menu of a row that is part of a multiple selection: acts on all of them. */
+  const selectionMenu = (e: React.MouseEvent): void => {
+    const chosen = sessions.filter((s) => selected.has(s.id))
+    showMenu(e, [
+      { label: `Connect ${chosen.length} sessions`, onClick: () => chosen.forEach((s) => openSession(s)) },
+      { label: '-', onClick: () => {} },
+      {
+        label: `Delete ${chosen.length} sessions`,
+        danger: true,
+        onClick: async () => {
+          if (!window.confirm(`Delete ${chosen.length} sessions?\nSaved passwords for them are removed too. This cannot be undone.`)) return
+          useStore.setState({ sessions: await api.deleteSession(chosen.map((s) => s.id)) })
+          setSelected(new Set())
+        }
+      }
+    ])
   }
 
   const sessionMenu = (e: React.MouseEvent, s: Session): void =>
@@ -178,16 +246,22 @@ function SessionTree(): JSX.Element {
       }
     ])
 
+  // What the search hides is not selected: a drag or delete must not touch rows out of sight.
+  const chosen = new Set(filtered.filter((s) => selected.has(s.id)).map((s) => s.id))
+
   const renderFolder = (f: FolderNode<Session>, depth: number): JSX.Element => (
     <div key={f.path || '__root'}>
       {f.path && (
         <div
-          className="tree-row folder"
+          className={`tree-row folder ${dropFolder === f.path ? 'drop-into' : ''}`}
           style={{ paddingLeft: 8 + (depth - 1) * 14 }}
           onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !c[f.path] }))}
           onContextMenu={(e) => folderMenu(e, f)}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => dragId && moveTo(dragId, f.path)}
+          onDragOver={(e) => hoverDrop(e, f.path)}
+          onDrop={(e) => {
+            e.stopPropagation()
+            dropInto(f.path)
+          }}
         >
           <Caret open={!collapsed[f.path] || !!filter} />
           <FolderIcon open={!collapsed[f.path] || !!filter} />
@@ -200,18 +274,35 @@ function SessionTree(): JSX.Element {
           {f.items.map((s) => (
             <div
               key={s.id}
-              className="tree-row"
+              className={`tree-row ${chosen.has(s.id) ? 'selected' : ''} ${dragIds?.includes(s.id) ? 'dragging' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 }}
               draggable
+              onClick={(e) => clickRow(e, s)}
               onDragStart={(e) => {
-                setDragId(s.id)
+                // A selected row takes the whole selection along; any other row goes alone.
+                const ids = chosen.has(s.id) ? [...chosen] : [s.id]
+                setDragIds(ids)
                 e.dataTransfer.setData('application/x-nixi-session', s.id)
+                if (ids.length > 1) dragBadge(e, ids.length)
                 // Lets the open tab view show split drop zones for this session.
-                setTimeout(() => useStore.setState({ dragging: { kind: 'session', id: s.id } }), 0)
+                setTimeout(() => {
+                  setSelected(new Set(ids))
+                  useStore.setState({ dragging: { kind: 'session', id: s.id, ids } })
+                }, 0)
               }}
-              onDragEnd={() => useStore.setState({ dragging: undefined })}
+              onDragEnd={() => {
+                setDragIds(undefined)
+                setDropFolder(undefined)
+                useStore.setState({ dragging: undefined })
+              }}
+              // Dropping on a session means its folder, so a full list still has somewhere to drop.
+              onDragOver={(e) => hoverDrop(e, s.folder)}
+              onDrop={(e) => {
+                e.stopPropagation()
+                dropInto(s.folder)
+              }}
               onDoubleClick={() => openSession(s)}
-              onContextMenu={(e) => sessionMenu(e, s)}
+              onContextMenu={(e) => (chosen.has(s.id) && chosen.size > 1 ? selectionMenu(e) : sessionMenu(e, s))}
               title={s.type === 'local' ? 'Local shell' : `${s.username ? s.username + '@' : ''}${s.host}:${s.port ?? ''}`}
             >
               <span className="color-chip" style={{ background: s.color || 'transparent' }} />
@@ -234,12 +325,12 @@ function SessionTree(): JSX.Element {
         </button>
       </div>
       <div
-        className="tree"
+        className={`tree ${dropFolder === '' ? 'drop-into' : ''}`}
         onContextMenu={backgroundMenu}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          if (e.target === e.currentTarget && dragId) moveTo(dragId, '')
-        }}
+        onClick={(e) => e.target === e.currentTarget && setSelected(new Set())}
+        onDragOver={(e) => hoverDrop(e, '')}
+        onDragLeave={(e) => e.target === e.currentTarget && setDropFolder(undefined)}
+        onDrop={() => dropInto('')}
       >
         {!filter && recent.length > 0 && (
           <>

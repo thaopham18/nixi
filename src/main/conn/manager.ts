@@ -5,11 +5,10 @@ import type { WebContents } from 'electron'
 import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
 import * as pty from '@lydell/node-pty'
 import type { OpenConnRequest, OpenConnResult, Session } from '@shared/types'
-import { getSession, touchSession } from '../store/stores'
+import { getSession, sessionSecret, touchSession } from '../store/stores'
 import { connectSsh, targetFromSession, type SshTarget } from '../ssh/connect'
 import { connect as netConnect, type Socket } from 'net'
 import { AutoLogin, TelnetClient } from '../telnet/protocol'
-import { getSecret } from '../store/secrets'
 import { StatsParser, STATS_SCRIPT } from '@shared/stats'
 
 interface Conn {
@@ -182,7 +181,7 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
         host: session.host,
         port: session.port || 23,
         username: session.username,
-        password: req.password ?? getSecret(session.id),
+        password: req.password ?? sessionSecret(session),
         startupCommand: session.startupCommand,
         encoding: session.encoding ?? 'utf8'
       },

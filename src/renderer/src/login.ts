@@ -20,7 +20,14 @@ export async function keepLogin(sessionId: string, login: LoginAnswer, secretNam
   typed.set(sessionId, { username, password })
   const session = useStore.getState().sessions.find((s) => s.id === sessionId)
   if (!login.remember || !session) return
-  const sessions = await api.saveSession({ ...session, username: login.username ?? session.username, secret: login.password })
+  if (login.credentialId) {
+    useStore.setState({ sessions: await api.saveSession({ ...session, credentialId: login.credentialId }) })
+    const name = useStore.getState().credentials.find((c) => c.id === login.credentialId)?.name
+    return toast(`${session.name} now uses the credential ${name}`)
+  }
+  // A login typed over a credential belongs to this session alone: the others using it stay as they are.
+  const secret = login.password ?? (session.credentialId ? await api.credentialSecret(session.credentialId) : undefined)
+  const sessions = await api.saveSession({ ...session, credentialId: undefined, username: login.username ?? session.username, secret })
   useStore.setState({ sessions })
   toast(`${login.password === undefined ? 'Username' : secretName} for ${session.name} saved in the database`)
 }

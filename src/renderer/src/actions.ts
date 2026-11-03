@@ -274,8 +274,8 @@ export function handleMenu(cmd: string): void {
       return
     case 'importSessions':
       api.importSessions().then(async (sessions) => {
-        const [{ tunnels }, macros, folders] = await Promise.all([api.listTunnels(), api.listMacros(), api.listFolders()])
-        s.set({ sessions, tunnels, macros, folders })
+        const [{ tunnels }, macros, folders, credentials] = await Promise.all([api.listTunnels(), api.listMacros(), api.listFolders(), api.listCredentials()])
+        s.set({ sessions, credentials, tunnels, macros, folders })
       })
       return
     case 'dbLock':
@@ -307,6 +307,8 @@ export function handleMenu(cmd: string): void {
       return s.set({ modal: 'settings' })
     case 'tunnels':
       return s.set({ modal: 'tunnels' })
+    case 'credentials':
+      return s.set({ modal: 'credentials' })
     case 'macros':
       return s.set({ modal: 'macros' })
     case 'macroPicker':

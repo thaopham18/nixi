@@ -3,17 +3,23 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { Macro, OpenConnRequest, Session, SessionInput, Settings, Tunnel } from '@shared/types'
+import type { Credential, CredentialInput, Macro, OpenConnRequest, Session, SessionInput, Settings, Tunnel } from '@shared/types'
 import { parseSshConfig, splitDomainUser } from '@shared/parse'
 import {
+  credentialSecret,
+  deleteCredential,
   deleteSession,
   getSession,
   getSettings,
+  importCredentials,
+  listCredentials,
   listSessions,
   macroStore,
   folderStore,
+  saveCredential,
   saveSession,
   saveSessions,
+  sessionSecret,
   setSettings,
   shortcutsChanged,
   tunnelStore
@@ -30,7 +36,6 @@ import { issueVncTicket, openTcp } from './vnc/proxy'
 import { openVncThroughSsh, openVncExternal } from './vnc/target'
 import { verifyHostKey } from './store/known-hosts'
 import { exportMoba, importMoba, pickMobaFile } from './import/mobaxterm'
-import { getSecret } from './store/secrets'
 
 function win(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -129,6 +134,10 @@ export function registerIpc(): void {
   handle('sessions:save', (_e, s: SessionInput) => saveSession(s))
   handle('sessions:saveAll', (_e, s: Session[]) => saveSessions(s))
   handle('sessions:delete', (_e, ids: string | string[]) => deleteSession(ids))
+  handle('credentials:list', () => listCredentials())
+  handle('credentials:save', (_e, c: CredentialInput) => ({ credentials: saveCredential(c), sessions: listSessions() }))
+  handle('credentials:delete', (_e, id: string) => ({ credentials: deleteCredential(id), sessions: listSessions() }))
+  handle('credentials:secret', (_e, id: string) => credentialSecret(id))
   handle('sessions:importSshConfig', () => {
     const file = join(homedir(), '.ssh', 'config')
     if (!existsSync(file)) return { added: 0, sessions: listSessions() }
@@ -162,6 +171,7 @@ export function registerIpc(): void {
     if (res.canceled || !res.filePath) return false
     const data = {
       sessions: listSessions().map(({ hasSecret: _h, ...s }) => s),
+      credentials: listCredentials().map(({ hasSecret: _h, ...c }) => c),
       folders: folderStore.get(),
       tunnels: tunnelStore.get(),
       macros: macroStore.get()
@@ -175,6 +185,7 @@ export function registerIpc(): void {
     const res = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
     if (res.canceled || !res.filePaths[0]) return listSessions()
     const data = JSON.parse(readFileSync(res.filePaths[0], 'utf8'))
+    if (Array.isArray(data.credentials)) importCredentials(data.credentials as Credential[])
     const byId = new Map(listSessions().map((s) => [s.id, s]))
     for (const s of (data.sessions ?? []) as Session[]) byId.set(s.id, s)
     if (Array.isArray(data.tunnels)) tunnelStore.set(data.tunnels)
@@ -200,7 +211,7 @@ export function registerIpc(): void {
       ...(await issueTicket(s.host, port)),
       destination: `${s.host}:${port}`,
       ...splitDomainUser(s.username ?? '', s.rdpDomain ?? ''),
-      password: getSecret(s.id),
+      password: sessionSecret(s),
       width: s.rdpWidth,
       height: s.rdpHeight
     }
@@ -217,7 +228,7 @@ export function registerIpc(): void {
       open: () => (s.jumpSessionId ? openVncThroughSsh(s.jumpSessionId, host, port) : openTcp(host, port)),
       verifyCert: (der) => verifyHostKey(host, port, der, 'vnc').catch(() => false)
     })
-    return { url, username: s.username ?? '', password: getSecret(s.id) }
+    return { url, username: s.username ?? '', password: sessionSecret(s) }
   })
   handle('vnc:openExternal', (_e, id: string) => {
     const s = getSession(id)

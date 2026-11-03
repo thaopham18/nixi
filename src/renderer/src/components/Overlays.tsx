@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Credential } from '@shared/types'
+import { api } from '../api'
 import { useStore } from '../store'
 
 export function Modal(props: {
@@ -37,11 +39,16 @@ export function PromptDialog(): JSX.Element | null {
   const [username, setUsername] = useState('')
   const input = useRef<HTMLInputElement>(null)
   const userInput = useRef<HTMLInputElement>(null)
+  const okButton = useRef<HTMLButtonElement>(null)
   const [checked, setChecked] = useState(false)
+  const saved = useStore((s) => s.credentials)
+  const credentials = prompt?.credentials ? saved.filter((c) => c.kind === 'password') : []
+  const [picked, setPicked] = useState<Credential>()
   useEffect(() => {
     setValue(prompt?.value ?? '')
     setUsername(prompt?.username ?? '')
     setChecked(false)
+    setPicked(undefined)
     // Start where there is something to type: a known username only needs its password.
     setTimeout(() => (prompt?.username === '' || (prompt?.username !== undefined && !prompt.password) ? userInput : input).current?.select(), 0)
   }, [prompt])
@@ -50,7 +57,17 @@ export function PromptDialog(): JSX.Element | null {
   const finish = (v: string | null): void => {
     if (v !== null && asksUser && !username.trim()) return userInput.current?.focus()
     useStore.setState({ prompt: undefined })
-    prompt.resolve(v, checked, asksUser && v !== null ? username.trim() : undefined)
+    // A credential's account applies even where this dialog doesn't ask for one.
+    prompt.resolve(v, checked, v === null ? undefined : asksUser ? username.trim() : picked?.username, v === null ? undefined : picked?.id)
+  }
+  const pick = async (id: string): Promise<void> => {
+    const credential = credentials.find((c) => c.id === id)
+    setPicked(credential)
+    if (!credential) return
+    const secret = await api.credentialSecret(id)
+    if (credential.username) setUsername(credential.username)
+    setValue(secret ?? '')
+    setTimeout(() => (secret ? okButton : input).current?.focus(), 0)
   }
   const submitUser = (): void => {
     if (username.trim() && prompt.password && !value) input.current?.focus()
@@ -63,12 +80,27 @@ export function PromptDialog(): JSX.Element | null {
       footer={
         <>
           <button onClick={() => finish(null)}>Cancel</button>
-          <button className="primary" onClick={() => finish(value)}>
+          <button ref={okButton} className="primary" onClick={() => finish(value)}>
             OK
           </button>
         </>
       }
     >
+      {credentials.length > 0 && (
+        <label className="field">
+          <span>Saved credential</span>
+          <select name="credential" value={picked?.id ?? ''} onChange={(e) => void pick(e.target.value)}>
+            <option value="">— type a login —</option>
+            {credentials.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.username ? ` (${c.username})` : ''}
+              </option>
+            ))}
+          </select>
+          {picked?.username && !asksUser && <span className="muted small">Logs in as {picked.username}</span>}
+        </label>
+      )}
       {asksUser && (
         <label className="field">
           <span>Username</span>
@@ -78,7 +110,10 @@ export function PromptDialog(): JSX.Element | null {
             autoComplete="off"
             spellCheck={false}
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => {
+              setUsername(e.target.value)
+              setPicked(undefined)
+            }}
             onKeyDown={(e) => e.key === 'Enter' && submitUser()}
           />
         </label>
@@ -91,7 +126,10 @@ export function PromptDialog(): JSX.Element | null {
             autoFocus={!asksUser}
             type={prompt.password ? 'password' : 'text'}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value)
+              setPicked(undefined)
+            }}
             onKeyDown={(e) => e.key === 'Enter' && finish(value)}
           />
         </label>
@@ -99,7 +137,7 @@ export function PromptDialog(): JSX.Element | null {
       {prompt.hint && <div className="error-line small">{prompt.hint}</div>}
       {prompt.checkbox && (
         <label className="check">
-          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> {prompt.checkbox}
+          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> {picked ? `Keep using ${picked.name} for this session` : prompt.checkbox}
         </label>
       )}
     </Modal>
@@ -119,7 +157,7 @@ export function ChoiceDialog(): JSX.Element | null {
       title={choice.title}
       onClose={() => finish(null)}
       footer={choice.buttons.map((b) => (
-        <button key={b.value} className={b.primary ? 'primary' : ''} autoFocus={b.primary} onClick={() => finish(b.value)}>
+        <button key={b.value} className={b.primary ? 'primary' : b.danger ? 'danger' : ''} autoFocus={b.primary} onClick={() => finish(b.value)}>
           {b.label}
         </button>
       ))}

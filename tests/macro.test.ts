@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { MacroRecorder, hotkeyOf, parseMacro, serializeMacro, toAccelerator, needsModifier, sameShortcut } from '../src/shared/macro'
+import { MacroRecorder, asTextMacro, textMacroSteps, hotkeyOf, parseMacro, serializeMacro, toAccelerator, needsModifier, sameShortcut } from '../src/shared/macro'
 
 describe('macro text format', () => {
+  it('paste block keeps its lines exactly, whatever they look like', () => {
+    const body = '#!/bin/sh\n\n  > indented\nwait 500\n# not a comment\ttab  '
+    const steps = parseMacro(`> vim\npaste <<END\n${body}\nEND\n> :wq`)
+    expect(steps).toEqual([
+      { kind: 'send', text: 'vim\r' },
+      { kind: 'paste', text: body },
+      { kind: 'send', text: ':wq\r' }
+    ])
+    expect(parseMacro(serializeMacro(steps))).toEqual(steps)
+  })
+
+  it('paste block picks an end marker the text does not contain', () => {
+    const steps = [{ kind: 'paste' as const, text: 'a\nEND\nEND2\nb' }]
+    expect(serializeMacro(steps)).toContain('<<END3\n')
+    expect(parseMacro(serializeMacro(steps))).toEqual(steps)
+  })
+
+  it('paste block without an end says where it started', () => {
+    expect(() => parseMacro('> ls\npaste <<EOF\nabc')).toThrow(/Line 2.*EOF/)
+  })
+
+  it('text macro round-trips and is told apart from longer ones', () => {
+    expect(asTextMacro(textMacroSteps('a\r\nb', false))).toEqual({ text: 'a\nb', pressEnter: false })
+    expect(asTextMacro(textMacroSteps('a', true))).toEqual({ text: 'a', pressEnter: true })
+    expect(asTextMacro(parseMacro('> ls'))).toBeUndefined()
+    expect(asTextMacro([...textMacroSteps('a', true), { kind: 'wait', ms: 1 }])).toBeUndefined()
+    expect(asTextMacro([{ kind: 'paste', text: 'a' }, { kind: 'send', text: 'y\r' }])).toBeUndefined()
+  })
+
   it('parses all step kinds', () => {
     const steps = parseMacro('# login\n> sudo -i\nexpect assword 3000\n>> secret\\r\nwait 200\n>')
     expect(steps).toEqual([

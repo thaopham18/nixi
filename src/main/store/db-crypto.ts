@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scrypt as scryptCb } from 'crypto'
-import type { Macro, Session, Settings, Tunnel } from '@shared/types'
+import type { Credential, Macro, Session, Settings, Tunnel } from '@shared/types'
 
 // File format of the Nixi database (see database.ts). Kept free of Electron so it can be tested.
 // The format id "ezterm-db" dates from the app's first name (EZTERM). It is part of the encrypted
@@ -13,12 +13,13 @@ import type { Macro, Session, Settings, Tunnel } from '@shared/types'
 export interface DbData {
   settings: Partial<Settings>
   sessions: Session[]
+  credentials: Credential[]
   tunnels: Tunnel[]
   macros: Macro[]
   /** session folders that exist on their own (a folder with sessions exists through them anyway) */
   folders: string[]
   knownHosts: Record<string, string>
-  /** passwords / key passphrases by session id (plain here: the whole file is encrypted) */
+  /** passwords / key passphrases by session id, or credentialSecretId() (plain here: the whole file is encrypted) */
   secrets: Record<string, string>
 }
 
@@ -38,7 +39,7 @@ export interface DbFile {
   data: string
 }
 
-export const emptyData = (): DbData => ({ settings: {}, sessions: [], tunnels: [], macros: [], folders: [], knownHosts: {}, secrets: {} })
+export const emptyData = (): DbData => ({ settings: {}, sessions: [], credentials: [], tunnels: [], macros: [], folders: [], knownHosts: {}, secrets: {} })
 
 export function newKdf(N = 2 ** 17): Kdf {
   // N = 2^17 → ~128 MB and a few hundred ms per unlock: slows down brute force of a stolen file.

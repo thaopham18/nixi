@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ServerStats } from '@shared/stats'
-import type { ConnState, Macro, Session, Settings, Transfer, Tunnel, TunnelStatus } from '@shared/types'
+import type { ConnState, Credential, Macro, Session, Settings, Transfer, Tunnel, TunnelStatus } from '@shared/types'
 import { uid } from './api'
 
 export interface Pane {
@@ -51,7 +51,9 @@ export interface PromptRequest {
   hint?: string
   /** also ask for a username, in a required field above the main one (starts with this text) */
   username?: string
-  resolve: (v: string | null, checked: boolean, username?: string) => void
+  /** offer the saved credentials: picking one fills the fields */
+  credentials?: boolean
+  resolve: (v: string | null, checked: boolean, username?: string, credentialId?: string) => void
 }
 
 export interface ChoiceRequest {
@@ -59,15 +61,16 @@ export interface ChoiceRequest {
   message: string
   /** items listed under the message */
   items?: string[]
-  buttons: { label: string; value: string; primary?: boolean }[]
+  buttons: { label: string; value: string; primary?: boolean; danger?: boolean }[]
   resolve: (value: string | null) => void
 }
 
-type Modal = 'session' | 'settings' | 'tunnels' | 'macros' | null
+type Modal = 'session' | 'settings' | 'tunnels' | 'macros' | 'credentials' | null
 
 interface State {
   settings?: Settings
   sessions: Session[]
+  credentials: Credential[]
   /** folders that exist without sessions too (see buildTree) */
   folders: string[]
   macros: Macro[]
@@ -94,7 +97,7 @@ interface State {
   toast?: { text: string; error?: boolean }
   report?: { title: string; lines: string[] }
   /** tab or session being dragged, so tab views can offer split drop zones */
-  dragging?: { kind: 'tab' | 'session'; id: string }
+  dragging?: { kind: 'tab' | 'session'; id: string; /** every session in the drag, when several are selected */ ids?: string[] }
   /** why an RDP/VNC pane is not showing a session */
   paneErrors: Record<string, { text: string; detail?: string }>
   /** latest resource stats per SSH connection; null = not available on that server */
@@ -126,6 +129,7 @@ function layoutFor(count: number, current: Layout, requested?: Layout): Layout {
 
 export const useStore = create<State>((set, get) => ({
   sessions: [],
+  credentials: [],
   folders: [],
   macros: [],
   tunnels: [],
@@ -313,12 +317,13 @@ interface PromptAnswer {
   value: string | null
   checked: boolean
   username?: string
+  credentialId?: string
 }
 
 function ask(opts: Omit<PromptRequest, 'resolve'>): Promise<PromptAnswer> {
   const next = promptQueue.then(
     () => new Promise<PromptAnswer>((resolve) =>
-      useStore.setState({ prompt: { ...opts, resolve: (value, checked, username) => resolve({ value, checked, username }) } })
+      useStore.setState({ prompt: { ...opts, resolve: (value, checked, username, credentialId) => resolve({ value, checked, username, credentialId }) } })
     )
   )
   promptQueue = next.catch(() => undefined)
@@ -334,6 +339,8 @@ export interface LoginAnswer {
   password?: string
   /** the user ticked Save: store it once the server has accepted it */
   remember: boolean
+  /** filled from this saved credential; with `remember`, the session keeps using it */
+  credentialId?: string
 }
 
 /**
@@ -356,13 +363,16 @@ export async function promptLogin(opts: {
     hint: opts.hint,
     password: asksSecret,
     username: opts.username,
+    credentials: asksSecret && secret === 'Password',
     checkbox: `Save ${saved} (in the encrypted database)`
   })
   if (res.value === null) return null
-  return { username: res.username, password: asksSecret ? res.value : undefined, remember: res.checked }
+  return { username: res.username, password: asksSecret ? res.value : undefined, remember: res.checked, credentialId: res.credentialId }
 }
 
 export function askChoice(opts: Omit<ChoiceRequest, 'resolve'>): Promise<string | null> {
+  // Only one fits on screen: whoever was waiting on an older one takes it as cancelled.
+  useStore.getState().choice?.resolve(null)
   return new Promise((resolve) => useStore.setState({ choice: { ...opts, resolve } }))
 }
 

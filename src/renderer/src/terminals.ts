@@ -6,9 +6,10 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { Macro, Session, Settings } from '@shared/types'
 import { MacroRecorder } from '@shared/macro'
+import { commandOnScreen, findDanger, InputLine, macroLines } from '@shared/danger'
 import { api, errorMessage, isMac } from './api'
 import { termTheme } from './themes'
-import { allPanes, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
+import { allPanes, askChoice, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
 import { forgetTypedPassword, keepLogin, typedLogin } from './login'
 
 interface Entry {
@@ -16,6 +17,8 @@ interface Entry {
   fit: FitAddon
   search: SearchAddon
   paneId: string
+  /** what was typed since the last Enter, for the dangerous command check */
+  typed: InputLine
 }
 
 const entries = new Map<string, Entry>()
@@ -104,6 +107,70 @@ function inputTargets(paneId: string): Pane[] {
   return allPanes().filter((p) => !s.multiExecExcluded[p.id])
 }
 
+function sendInput(paneId: string, data: string): void {
+  if (recorder) recorder.feed(data)
+  for (const p of inputTargets(paneId))
+    if (p.connId) {
+      quiet(p.connId, 1000)
+      api.write(p.connId, data)
+    }
+}
+
+/** The command line under the cursor as the terminal shows it: covers history, completion and programs like mysql. */
+function screenCommand(term: Terminal): string {
+  const buf = term.buffer.active
+  const rowsOf = (y: number): [number, number] => {
+    let first = y
+    let last = y
+    while (first > 0 && buf.getLine(first)?.isWrapped) first--
+    while (buf.getLine(last + 1)?.isWrapped) last++
+    return [first, last]
+  }
+  return commandOnScreen((back) => {
+    let y = buf.baseY + buf.cursorY
+    for (let i = 0; i < back; i++) y = rowsOf(y)[0] - 1
+    if (y < 0) return undefined
+    const [first, last] = rowsOf(y)
+    let text = ''
+    for (let r = first; r <= last; r++) text += buf.getLine(r)?.translateToString(r === last) ?? ''
+    return text
+  })
+}
+
+interface DangerHit {
+  text: string
+  reasons: string[]
+}
+
+function dangerIn(candidates: string[]): DangerHit[] {
+  const settings = useStore.getState().settings
+  if (settings?.warnDangerousCommands === false) return []
+  return candidates.map((text) => ({ text, reasons: findDanger(text, settings?.dangerWatchList) })).filter((h) => h.reasons.length)
+}
+
+/** True = run it anyway. */
+async function askDanger(paneId: string, hits: DangerHit[]): Promise<boolean> {
+  const watchList = useStore.getState().settings?.dangerWatchList
+  const targets = inputTargets(paneId)
+  const names = [...new Set(targets.map((p) => p.title))].join(', ')
+  const answer = await askChoice({
+    title: 'Dangerous command',
+    message: `${[...new Set(hits.flatMap((h) => h.reasons))].join('. ')}. It will run on ${
+      targets.length > 1 ? `${targets.length} terminals: ${names}` : names
+    }.`,
+    // The first candidate is what was typed, which reads better than the screen line with its prompt.
+    items: hits[0].text.split('\n').filter((l) => findDanger(l, watchList).length).map((l) => (l.length > 300 ? `${l.slice(0, 300)}…` : l)),
+    buttons: [
+      { label: 'Cancel', value: 'cancel', primary: true },
+      { label: 'Run anyway', value: 'run', danger: true }
+    ]
+  })
+  entries.get(paneId)?.term.focus()
+  return answer === 'run'
+}
+
+const askingDanger = new Set<string>()
+
 function handleInput(paneId: string, data: string): void {
   const pane = findPane(paneId)
   if (!pane) return
@@ -111,12 +178,18 @@ function handleInput(paneId: string, data: string): void {
     connectPane(paneId)
     return
   }
-  if (recorder) recorder.feed(data)
-  for (const p of inputTargets(paneId))
-    if (p.connId) {
-      quiet(p.connId, 1000)
-      api.write(p.connId, data)
-    }
+  const entry = entries.get(paneId)
+  const lines = entry?.typed.feed(data)
+  // Full-screen programs (vim, less…) have no command line: Enter there runs nothing.
+  if (!entry || !lines || !pane.connId || entry.term.buffer.active.type === 'alternate') return sendInput(paneId, data)
+  if (askingDanger.has(paneId)) return // the dialog is up; a late Enter must not slip through
+  const hits = dangerIn([lines.join('\n'), screenCommand(entry.term)])
+  if (!hits.length) return sendInput(paneId, data)
+  askingDanger.add(paneId)
+  void askDanger(paneId, hits).then((ok) => {
+    askingDanger.delete(paneId)
+    if (ok) sendInput(paneId, data)
+  })
 }
 
 export async function pasteInto(paneId: string, text?: string): Promise<void> {
@@ -274,7 +347,7 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
     true
   )
 
-  const entry = { term, fit, search, paneId }
+  const entry = { term, fit, search, paneId, typed: new InputLine() }
   entries.set(paneId, entry)
   return entry
 }
@@ -436,11 +509,18 @@ function waitForOutput(connId: string, pattern: string, timeoutMs: number): Prom
   })
 }
 
-async function runOn(connId: string, macro: Macro): Promise<void> {
+/** What a terminal receives for a pasted block: whole, so the shell doesn't run it line by line if it can help it. */
+function pasteData(pane: Pane, text: string): string {
+  const body = text.replace(/\r?\n/g, '\r')
+  return entries.get(pane.id)?.term.modes.bracketedPasteMode ? `\x1b[200~${body}\x1b[201~` : body
+}
+
+async function runOn(pane: Pane, macro: Macro): Promise<void> {
+  const connId = pane.connId!
   for (const step of macro.steps) {
-    if (step.kind === 'send') {
+    if (step.kind === 'send' || step.kind === 'paste') {
       quiet(connId, 1000)
-      api.write(connId, step.text)
+      api.write(connId, step.kind === 'send' ? step.text : pasteData(pane, step.text))
     }
     else if (step.kind === 'wait') await new Promise((r) => setTimeout(r, step.ms))
     else await waitForOutput(connId, step.pattern, step.timeoutMs)
@@ -467,6 +547,12 @@ export async function typeIntoField(field: HTMLInputElement | HTMLTextAreaElemen
   field.focus()
   for (const step of macro.steps) {
     if (step.kind === 'wait') await new Promise((r) => setTimeout(r, step.ms))
+    if (step.kind === 'paste') {
+      if (!field.isConnected) return
+      // A one-line field can't hold line breaks, and Enter there would submit half of it.
+      document.execCommand('insertText', false, field instanceof HTMLInputElement ? step.text.replace(/\n+/g, ' ') : step.text)
+      await tick()
+    }
     if (step.kind !== 'send') continue
     const lines = step.text.split(/\r\n|\r|\n/)
     for (const [i, line] of lines.entries()) {
@@ -487,7 +573,11 @@ export async function typeIntoField(field: HTMLInputElement | HTMLTextAreaElemen
 export async function runMacro(macro: Macro, paneId: string): Promise<void> {
   const targets = inputTargets(paneId).filter((p) => p.connId)
   if (!targets.length) return toast('No connected terminal to run the macro on', true)
-  const results = await Promise.allSettled(targets.map((p) => runOn(p.connId!, macro)))
+  const sends = macro.steps.flatMap((step) => (step.kind === 'send' ? [step.text] : step.kind === 'paste' ? [step.text + '\n'] : []))
+  const hits = dangerIn([macroLines(sends)])
+  if (hits.length && !(await askDanger(paneId, hits))) return
+  entries.get(paneId)?.term.focus() // started from a toolbar menu: what comes next is typed in the terminal
+  const results = await Promise.allSettled(targets.map((p) => runOn(p, macro)))
   const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
   if (failed.length) toast(`Macro "${macro.name}": ${errorMessage(failed[0].reason)}`, true)
 }

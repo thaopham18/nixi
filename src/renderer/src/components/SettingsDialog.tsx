@@ -16,9 +16,10 @@ export function SettingsDialog(): JSX.Element {
   const set = <K extends keyof Settings>(k: K, v: Settings[K]): void => setS((x) => ({ ...x, [k]: v }))
   const close = (): void => useStore.setState({ modal: null })
   const save = async (): Promise<void> => {
-    useStore.setState({ settings: await api.setSettings(s), modal: null })
+    const dangerWatchList = (s.dangerWatchList ?? []).map((w) => w.trim()).filter(Boolean)
+    useStore.setState({ settings: await api.setSettings({ ...s, dangerWatchList }), modal: null })
   }
-  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'sftpAutoOpen', label: string): JSX.Element => (
+  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'warnDangerousCommands' | 'sftpAutoOpen', label: string): JSX.Element => (
     <label className="check">
       <input type="checkbox" checked={s[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
     </label>
@@ -88,6 +89,25 @@ export function SettingsDialog(): JSX.Element {
       {check('copyOnSelect', 'Copy text on selection')}
       {check('rightClickPaste', 'Right-click pastes')}
       {check('warnMultilinePaste', 'Warn before pasting multiple lines')}
+      <h4>Dangerous commands</h4>
+      {check('warnDangerousCommands', 'Ask before running commands that are hard to undo')}
+      <p className="muted small">
+        rm -rf, DROP TABLE, DELETE without WHERE, mkfs, reboot, git push --force, kubectl delete, format c:… in terminals and macros. A
+        safety net against slips: a command written in an unusual way can still get through.
+      </p>
+      <label className="field">
+        <span>Also ask about (one per line)</span>
+        <textarea
+          name="dangerWatchList"
+          className="mono"
+          rows={3}
+          spellCheck={false}
+          placeholder={'deploy prod\nsystemctl stop'}
+          disabled={s.warnDangerousCommands === false}
+          value={(s.dangerWatchList ?? []).join('\n')}
+          onChange={(e) => set('dangerWatchList', e.target.value.split('\n'))}
+        />
+      </label>
       <h4>Macros</h4>
       <label className="field">
         <span>Show the macro list at the cursor (click, then press keys)</span>

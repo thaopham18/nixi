@@ -39,6 +39,10 @@ export function Toolbar(): JSX.Element {
         <ToolIcon name="tunnel" />
         <span className="label">Tunnels</span>
       </button>
+      <button onClick={() => handleMenu('credentials')} title="Saved logins">
+        <ToolIcon name="key" />
+        <span className="label">Credentials</span>
+      </button>
       <button onClick={macroMenu} className={recording ? 'recording' : ''} title="Macros">
         {recording ? (
           '● REC'

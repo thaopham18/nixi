@@ -14,6 +14,7 @@ import { SessionDialog } from './components/SessionDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TunnelManager } from './components/TunnelManager'
 import { MacroManager } from './components/MacroManager'
+import { CredentialManager } from './components/CredentialManager'
 import { AboutLine } from './components/AboutLine'
 import { MacroPicker } from './components/MacroPicker'
 import { HeartIcon } from './components/Icons'
@@ -37,11 +38,12 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (db?.state !== 'unlocked') return
-    Promise.all([api.getSettings(), api.listSessions(), api.listMacros(), api.listTunnels(), api.listFolders()]).then(
-      ([settings, sessions, macros, { tunnels, statuses }, folders]) =>
+    Promise.all([api.getSettings(), api.listSessions(), api.listMacros(), api.listTunnels(), api.listFolders(), api.listCredentials()]).then(
+      ([settings, sessions, macros, { tunnels, statuses }, folders, credentials]) =>
         useStore.setState({
           settings,
           sessions,
+          credentials,
           folders,
           macros,
           tunnels,
@@ -132,6 +134,7 @@ export function App(): JSX.Element {
       {modal === 'settings' && <SettingsDialog />}
       {modal === 'tunnels' && <TunnelManager />}
       {modal === 'macros' && <MacroManager />}
+      {modal === 'credentials' && <CredentialManager />}
       <PromptDialog />
       <ChoiceDialog />
       <ReportDialog />

@@ -12,6 +12,8 @@ export interface Session {
   username?: string
   auth?: AuthMethod
   privateKeyPath?: string
+  /** Saved credential this session logs in with: its username, password and key apply (main resolves them). */
+  credentialId?: string
   /** Another saved SSH session used as ProxyJump (VNC: the connection goes through it). */
   jumpSessionId?: string
   keepaliveSec?: number
@@ -45,6 +47,23 @@ export interface SessionInput extends Session {
   clearSecret?: boolean
 }
 
+/** A login kept once and picked by many sessions. The secret stays in main, like a session's. */
+export interface Credential {
+  id: string
+  name: string
+  username?: string
+  /** password, or private key (SSH only) with an optional passphrase */
+  kind: 'password' | 'key'
+  privateKeyPath?: string
+  /** Set by main: a password/passphrase is stored. Never contains the secret. */
+  hasSecret?: boolean
+}
+
+export interface CredentialInput extends Credential {
+  secret?: string
+  clearSecret?: boolean
+}
+
 export interface Settings {
   theme: 'dark' | 'light' | 'solarized'
   fontFamily: string
@@ -57,6 +76,10 @@ export interface Settings {
   copyOnSelect: boolean
   rightClickPaste: boolean
   warnMultilinePaste: boolean
+  /** ask before running commands that are hard to undo (rm -rf, DROP TABLE…) */
+  warnDangerousCommands: boolean
+  /** more words or commands to ask about, beyond the built-in rules */
+  dangerWatchList: string[]
   downloadDir: string
   sftpAutoOpen: boolean
   /** opens the macro list at the terminal cursor, hotkeyOf() format ("Cmd+J"); empty = menu only */
@@ -94,6 +117,8 @@ export interface TunnelStatus {
 
 export type MacroStep =
   | { kind: 'send'; text: string }
+  /** a block of text put in as one paste: its line breaks don't run anything where the shell supports bracketed paste */
+  | { kind: 'paste'; text: string }
   | { kind: 'wait'; ms: number }
   | { kind: 'waitFor'; pattern: string; timeoutMs: number }
 

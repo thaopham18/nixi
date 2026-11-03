@@ -6,6 +6,7 @@ import type { MacroStep } from './types'
 //   wait 500          sleep 500 ms
 //   expect \$ 5000    wait until output matches regex (timeout ms, default 10000)
 //   # comment
+//   paste <<END       paste the lines up to END as one block, exactly as written
 
 function unescape(s: string): string {
   return s.replace(/\\(x[0-9a-fA-F]{2}|.)/g, (_m, c: string) => {
@@ -23,9 +24,18 @@ function escape(s: string): string {
 
 export function parseMacro(text: string): MacroStep[] {
   const steps: MacroStep[] = []
-  text.split(/\r?\n/).forEach((raw, i) => {
-    const line = raw.trimEnd()
-    if (!line.trim() || line.trimStart().startsWith('#')) return
+  const lines = text.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd()
+    if (!line.trim() || line.trimStart().startsWith('#')) continue
+    const block = line.match(/^paste\s+<<(\S+)$/i)
+    if (block) {
+      const end = lines.indexOf(block[1], i + 1)
+      if (end < 0) throw new Error(`Line ${i + 1}: no line "${block[1]}" closes this paste block`)
+      steps.push({ kind: 'paste', text: lines.slice(i + 1, end).join('\n') })
+      i = end
+      continue
+    }
     if (line.startsWith('>> ')) steps.push({ kind: 'send', text: unescape(line.slice(3)) })
     else if (line.startsWith('> ')) steps.push({ kind: 'send', text: line.slice(2) + '\r' })
     else if (line === '>') steps.push({ kind: 'send', text: '\r' })
@@ -38,7 +48,7 @@ export function parseMacro(text: string): MacroStep[] {
         steps.push({ kind: 'waitFor', pattern: expect[1], timeoutMs: expect[2] ? Number(expect[2]) : 10000 })
       } else throw new Error(`Line ${i + 1}: cannot parse "${line}"`)
     }
-  })
+  }
   return steps
 }
 
@@ -47,11 +57,29 @@ export function serializeMacro(steps: MacroStep[]): string {
     .map((s) => {
       if (s.kind === 'wait') return `wait ${s.ms}`
       if (s.kind === 'waitFor') return `expect ${s.pattern} ${s.timeoutMs}`
+      if (s.kind === 'paste') {
+        let end = 'END'
+        for (let n = 2; s.text.split('\n').includes(end); n++) end = `END${n}`
+        return `paste <<${end}\n${s.text}\n${end}`
+      }
       const body = s.text.slice(0, -1)
       if (s.text.endsWith('\r') && !/[\x00-\x1f\x7f\\]/.test(body)) return body ? `> ${body}` : '>'
       return `>> ${escape(s.text)}`
     })
     .join('\n')
+}
+
+/** A macro that is just a block of text, the way the Text editor writes it. */
+export function textMacroSteps(text: string, pressEnter: boolean): MacroStep[] {
+  return [{ kind: 'paste', text: text.replace(/\r\n?/g, '\n') }, ...(pressEnter ? [{ kind: 'send' as const, text: '\r' }] : [])]
+}
+
+/** The reverse: undefined when the steps do anything more, which only the Commands editor can show. */
+export function asTextMacro(steps: MacroStep[]): { text: string; pressEnter: boolean } | undefined {
+  const [first, second, ...rest] = steps
+  if (first?.kind !== 'paste' || rest.length) return undefined
+  if (second && !(second.kind === 'send' && second.text === '\r')) return undefined
+  return { text: first.text, pressEnter: Boolean(second) }
 }
 
 /** Turns raw terminal keystrokes into macro steps, one "send" per Enter. */

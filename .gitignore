@@ -31,3 +31,8 @@ id_rsa*
 id_ed25519*
 .env
 .env.*
+
+# demo data, local only
+samples/
+scripts/make-sample-db.mjs
+scripts/e2e-sample.mjs
