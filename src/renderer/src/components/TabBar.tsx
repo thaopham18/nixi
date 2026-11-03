@@ -215,16 +215,17 @@ export function TabBar(): JSX.Element {
                     duplicateTab(t.id)
                   }}
                 >
-                  ⧉
+                  <ToolIcon name="multi" />
                 </button>
                 <button
                   className="tab-close"
+                  title="Close tab"
                   onClick={(e) => {
                     e.stopPropagation()
                     closeTab(t.id)
                   }}
                 >
-                  ✕
+                  <ToolIcon name="close" />
                 </button>
               </>
             )}

@@ -3,6 +3,7 @@ import type { Credential, CredentialInput } from '@shared/types'
 import { api, errorMessage, uid } from '../api'
 import { toast, useStore } from '../store'
 import { Modal } from './Overlays'
+import { ToolIcon } from './Icons'
 
 const blank = (): CredentialInput => ({ id: uid(), name: '', username: '', kind: 'password' })
 
@@ -63,7 +64,10 @@ export function CredentialManager(): JSX.Element {
               {c.kind === 'key' && <span className="badge">key</span>}
             </div>
           ))}
-          <button onClick={() => select(blank())}>＋ New credential</button>
+          <button onClick={() => select(blank())}>
+            <ToolIcon name="plus" />
+            New credential
+          </button>
         </div>
         <div className="macro-editor">
           <div className="grid2">

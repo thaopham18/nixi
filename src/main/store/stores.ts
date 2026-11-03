@@ -14,6 +14,7 @@ const defaultSettings: Settings = {
   copyOnSelect: true,
   rightClickPaste: true,
   warnMultilinePaste: true,
+  autoReconnect: true,
   warnDangerousCommands: true,
   dangerWatchList: [],
   downloadDir: '',

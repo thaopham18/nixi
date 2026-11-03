@@ -3,6 +3,7 @@ import type { Session, Tunnel, TunnelStatus, TunnelType } from '@shared/types'
 import { api, isMac, uid } from '../api'
 import { toast, useStore } from '../store'
 import { Modal } from './Overlays'
+import { ToolIcon } from './Icons'
 
 const thisComputer = isMac ? 'This Mac' : 'This computer'
 const inText = isMac ? 'this Mac' : 'this computer'
@@ -288,11 +289,11 @@ export function TunnelManager(): JSX.Element {
                 )}
                 <button onClick={() => setEdit(t)}>Edit</button>
                 <button
-                  className="danger"
+                  className="danger square"
                   title="Delete"
                   onClick={() => window.confirm(`Delete tunnel "${t.name}"?`) && void persist(tunnels.filter((x) => x.id !== t.id))}
                 >
-                  ✕
+                  <ToolIcon name="trash" />
                 </button>
               </div>
               <Flow t={t} server={server} jump={sessionOf(server?.jumpSessionId)} />
@@ -308,7 +309,8 @@ export function TunnelManager(): JSX.Element {
         </div>
       )}
       <button className="primary" disabled={!sessions.length} onClick={() => setEdit(blank())}>
-        ＋ New tunnel
+        <ToolIcon name="plus" />
+        New tunnel
       </button>
       {!sessions.length && <p className="muted small">Create an SSH session first — tunnels run over a saved session.</p>}
     </Modal>

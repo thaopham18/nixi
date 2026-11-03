@@ -39,7 +39,7 @@ export function SessionDialog(): JSX.Element {
   const close = (): void => useStore.setState({ modal: null, editingSession: undefined })
 
   const save = async (connect: boolean): Promise<void> => {
-    const name = form.name.trim() || form.host || (form.type === 'local' ? 'Local shell' : '')
+    const name = form.name.trim() || form.host || (form.type === 'local' ? 'Local' : '')
     if (!name) return toast('Name or host is required', true)
     if (form.type !== 'local' && !form.host?.trim()) return toast('Host is required', true)
     try {
@@ -91,7 +91,7 @@ export function SessionDialog(): JSX.Element {
       }
     >
       <div className="type-picker">
-        {(['ssh', 'telnet', 'rdp', 'vnc', 'local'] as const).map((t) => (
+        {(['ssh', 'rdp', 'vnc', 'telnet', 'local'] as const).map((t) => (
           <button
             key={t}
             className={form.type === t ? 'active' : ''}
@@ -106,7 +106,7 @@ export function SessionDialog(): JSX.Element {
             }
           >
             <SessionIcon type={t} />
-            {{ ssh: 'SSH', telnet: 'Telnet', local: 'Local shell', rdp: 'RDP', vnc: 'VNC' }[t]}
+            {{ ssh: 'SSH', telnet: 'Telnet', local: 'Local', rdp: 'RDP', vnc: 'VNC' }[t]}
           </button>
         ))}
       </div>

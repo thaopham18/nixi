@@ -99,7 +99,7 @@ interface State {
   /** tab or session being dragged, so tab views can offer split drop zones */
   dragging?: { kind: 'tab' | 'session'; id: string; /** every session in the drag, when several are selected */ ids?: string[] }
   /** why an RDP/VNC pane is not showing a session */
-  paneErrors: Record<string, { text: string; detail?: string }>
+  paneErrors: Record<string, { text: string; detail?: string; retrying?: boolean }>
   /** latest resource stats per SSH connection; null = not available on that server */
   serverStats: Record<string, ServerStats | null>
   /** tabs (not the open one) whose terminals printed something since they were last open */

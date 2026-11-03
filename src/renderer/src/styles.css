@@ -27,6 +27,19 @@
   --radius: 10px;
   --radius-sm: 7px;
   --radius-xs: 5px;
+  /*
+   * One height scale for every control, so buttons side by side line up:
+   *   --ctl-h     toolbars, dialogs, cards, and the inputs next to them
+   *   --ctl-h-sm  pane toolbars (RDP/VNC), icon buttons, segmented buttons, chips
+   *   --ctl-h-xs  icon buttons in a thin bar or a row (pane header, tab, macro row)
+   */
+  --ctl-h: 28px;
+  --ctl-h-sm: 24px;
+  --ctl-h-xs: 20px;
+  /* widths, so buttons side by side match too */
+  --ctl-w: 120px; /* main toolbar, welcome screen, dialog footers */
+  --ctl-w-sm: 92px; /* pane toolbars, and the action row of a form */
+  --ctl-w-icon: 36px; /* main toolbar when it only has room for icons */
   --line: color-mix(in srgb, var(--border) 55%, transparent);
   --panel: color-mix(in srgb, var(--bg) 45%, var(--bg2));
   /* terminal background: the theme's, or the user's own (set inline on <html> by App.tsx) */
@@ -112,7 +125,12 @@ button {
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ctl-h);
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -131,12 +149,36 @@ button.primary {
 button.danger {
   color: var(--danger);
 }
-button.icon {
+/* icon only, no frame: the same look wherever it sits, and only its size changes */
+button.icon,
+.tab-nav button,
+.tab-add,
+.tab-close,
+.tab-dup {
+  flex: none;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  padding: 0;
   background: transparent;
   border: none;
-  padding: 2px 6px;
+  color: var(--muted);
+}
+button.icon:hover:not(:disabled),
+.tab-nav button:hover:not(:disabled),
+.tab-add:hover,
+.tab-close:hover,
+.tab-dup:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  filter: none;
+}
+/* framed like its neighbours, but holding only an icon */
+button.square {
+  width: var(--ctl-h);
+  padding: 0;
 }
 button.link {
+  height: auto;
   background: none;
   border: none;
   color: var(--accent);
@@ -151,6 +193,10 @@ button.active-toggle {
   background: color-mix(in srgb, var(--warn) 14%, var(--bg3));
   border-color: color-mix(in srgb, var(--warn) 45%, var(--border));
   color: var(--warn);
+}
+input:where(:not([type='checkbox'], [type='radio'], [type='color'])),
+select {
+  height: var(--ctl-h);
 }
 input,
 select,
@@ -264,24 +310,21 @@ html.fullscreen .lock-screen {
 .toolbar {
   container-type: inline-size;
 }
-.toolbar button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.toolbar button:not(.square) {
+  width: var(--ctl-w);
 }
 .tool-ico {
   flex: none;
   width: 15px;
   height: 15px;
 }
-.toolbar .chevron {
-  font-size: 9px;
-  opacity: 0.7;
-}
 /* narrow window: icon-only toolbar buttons (titles still name them) */
-@container (max-width: 820px) {
+@container (max-width: 900px) {
   .toolbar .label {
     display: none;
+  }
+  .toolbar button:not(.square) {
+    width: var(--ctl-w-icon);
   }
 }
 .toolbar .spacer {
@@ -317,15 +360,20 @@ html.fullscreen .lock-screen {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
-.sidebar-tabs button {
-  flex: 1;
+.sidebar-tabs button,
+.type-picker button {
+  height: var(--ctl-h-sm);
   border: none;
   border-radius: var(--radius-xs);
   background: transparent;
-  padding: 4px;
   color: var(--muted);
 }
-.sidebar-tabs button.active {
+.sidebar-tabs button {
+  flex: 1;
+  padding: 0 4px;
+}
+.sidebar-tabs button.active,
+.type-picker button.active {
   color: var(--fg);
   background: var(--bg3);
   box-shadow: 0 1px 2px #0003;
@@ -498,23 +546,10 @@ html.fullscreen .lock-screen {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
   margin-top: 2px;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--muted);
 }
 .tab-add {
   align-self: center;
-  width: 28px;
-}
-.tab-nav button:hover:not(:disabled),
-.tab-add:hover {
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 .tab-nav button:disabled {
   opacity: 0.3;
@@ -635,11 +670,17 @@ html.fullscreen .lock-screen {
 }
 .tab-close,
 .tab-dup {
-  background: none;
-  border: none;
-  padding: 0 2px;
+  width: var(--ctl-h-xs);
+  height: var(--ctl-h-xs);
+  border-radius: var(--radius-xs);
   opacity: 0;
-  font-size: 11px;
+}
+.tab-close .tool-ico,
+.tab-dup .tool-ico,
+.pane-header .icon .tool-ico,
+.macro-row .order-buttons .tool-ico {
+  width: 13px;
+  height: 13px;
 }
 .tab:hover .tab-close,
 .tab.active .tab-close,
@@ -718,12 +759,9 @@ html.fullscreen .lock-screen {
   background: color-mix(in srgb, var(--fg) 6%, var(--bg2));
 }
 .pane-header .icon {
-  padding: 0 4px;
-  font-size: 12px;
-  opacity: 0.7;
-}
-.pane-header .icon:hover {
-  opacity: 1;
+  width: var(--ctl-h-xs);
+  height: var(--ctl-h-xs);
+  border-radius: var(--radius-xs);
 }
 .rdp-toolbar .pane-header {
   background: transparent;
@@ -878,6 +916,22 @@ body.resizing .vnc-display {
 .welcome-actions {
   display: flex;
   gap: 8px;
+}
+.welcome-actions button,
+.modal-footer button {
+  min-width: var(--ctl-w);
+}
+.row.end button,
+.tunnel-card-head button:not(.square) {
+  min-width: var(--ctl-w-sm);
+}
+.rdp-overlay-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.rdp-overlay-actions button {
+  min-width: var(--ctl-w-sm);
 }
 .welcome-about {
   margin-top: 22px;
@@ -1156,19 +1210,16 @@ body.resizing .vnc-display {
   grid-column: span 2;
 }
 .type-picker {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  width: fit-content;
+  max-width: 100%;
+  gap: 2px;
   margin-bottom: 12px;
-}
-.type-picker button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.type-picker button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
 }
 details {
   margin-bottom: 10px;
@@ -1326,8 +1377,9 @@ summary {
   gap: 2px;
 }
 .macro-row .order-buttons button {
-  padding: 0 5px;
-  line-height: 18px;
+  width: var(--ctl-h-xs);
+  height: var(--ctl-h-xs);
+  border-radius: var(--radius-xs);
 }
 .macro-row.dragging {
   opacity: 0.4;
@@ -1577,7 +1629,7 @@ summary {
     display: none;
   }
 }
-@container (max-width: 880px) {
+@container (max-width: 900px) {
   .stats-bar .users,
   .stats-bar .uptime {
     display: none;
@@ -1621,6 +1673,7 @@ summary {
   gap: 3px;
   text-align: left;
   padding: 8px 10px;
+  justify-content: flex-start;
   white-space: normal;
   height: auto;
 }
@@ -1784,11 +1837,13 @@ summary {
   margin-bottom: 12px;
 }
 .tunnel-presets button {
-  padding: 2px 8px;
+  height: var(--ctl-h-sm);
+  padding: 0 8px;
   font-size: 12px;
 }
 .tunnel-presets button.active {
   border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .tunnel-list {
   display: flex;
@@ -1975,7 +2030,9 @@ input.recording-key {
   flex: 1;
 }
 .rdp-toolbar button {
-  padding: 2px 8px;
+  min-width: var(--ctl-w-sm);
+  height: var(--ctl-h-sm);
+  padding: 0 8px;
   font-size: 12px;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1984,12 +2041,12 @@ input.recording-key {
 .rdp-pane {
   container-type: inline-size;
 }
-@container (max-width: 760px) {
+@container (max-width: 860px) {
   .rdp-toolbar .tb-wide {
     display: none;
   }
 }
-@container (max-width: 520px) {
+@container (max-width: 620px) {
   .rdp-toolbar .tb-medium {
     display: none;
   }
@@ -2009,7 +2066,8 @@ input.recording-key {
 .rdp-toolbar select {
   width: auto;
   flex-shrink: 0;
-  padding: 2px 6px;
+  height: var(--ctl-h-sm);
+  padding: 0 6px;
   font-size: 12px;
 }
 .vnc-stats {
@@ -2064,6 +2122,7 @@ input.recording-key {
   justify-content: center;
 }
 .about-trigger {
+  height: auto;
   background: none;
   border: none;
   padding: 2px 6px;

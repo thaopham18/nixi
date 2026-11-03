@@ -1,4 +1,5 @@
 import type { UserInteraction } from '@devolutions/iron-remote-desktop'
+import { isNetworkError, isRdpDrop, Retry } from '@shared/reconnect'
 import { api, errorMessage } from './api'
 import { splitDomainUser } from '@shared/parse'
 import { findPane, promptLogin, useStore, type LoginAnswer } from './store'
@@ -46,6 +47,9 @@ function describeError(err: unknown): { text: string; detail?: string; auth: boo
  * when its pane is moved between tabs or splits; it ends only via disposeRdp().
  */
 interface RdpConn {
+  retry: Retry
+  /** the try under way belongs to the reconnect loop */
+  retrying?: boolean
   el?: HTMLElement
   ui?: UserInteraction
   /** bumped on every (re)connect; stale async work checks it and bails out */
@@ -62,7 +66,7 @@ interface RdpConn {
 
 const conns = new Map<string, RdpConn>()
 
-function setError(paneId: string, error?: { text: string; detail?: string }): void {
+function setError(paneId: string, error?: { text: string; detail?: string; retrying?: boolean }): void {
   useStore.setState((s) => {
     const paneErrors = { ...s.paneErrors }
     if (error) paneErrors[paneId] = error
@@ -92,6 +96,7 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
   shutdown(c)
   setError(paneId)
   update({ state: 'connecting' })
+  let connected = false
   try {
     const rdp = await loadRdp()
     if (stale()) return
@@ -158,12 +163,17 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
     if (stale()) return
     c.rejected = undefined
     c.attempts = 0
+    c.retry.up()
+    c.retrying = false
+    connected = true
     ui.setVisibility(true)
     update({ state: 'connected' })
     if (typed) void keepLogin(sessionId, typed)
     const end = await info.run()
     if (stale()) return
     update({ state: 'closed' })
+    c.retry.down()
+    if (isRdpDrop(end.reason()) && retryLater(paneId, c)) return
     setError(paneId, { text: `Session ended: ${end.reason()}` })
   } catch (err) {
     if (stale()) return
@@ -174,6 +184,8 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
       if (c.attempts++ < 3) return void connect(paneId, c)
     }
     update({ state: 'closed' })
+    if (connected) c.retry.down()
+    if (!d.auth && (connected || (c.retrying && isNetworkError(d.text))) && retryLater(paneId, c)) return
     setError(paneId, d)
   }
 }
@@ -182,7 +194,7 @@ async function connect(paneId: string, c: RdpConn): Promise<void> {
 export function attachRdp(paneId: string, host: HTMLElement): void {
   let c = conns.get(paneId)
   if (!c) {
-    c = { gen: 0, attempts: 0, host }
+    c = { gen: 0, attempts: 0, host, retry: new Retry() }
     conns.set(paneId, c)
     void connect(paneId, c)
     return
@@ -191,9 +203,28 @@ export function attachRdp(paneId: string, host: HTMLElement): void {
   if (c.el && c.el.parentElement !== host) host.appendChild(c.el)
 }
 
+/** Show the countdown and try again; false when auto reconnect is off or out of tries. */
+function retryLater(paneId: string, c: RdpConn): boolean {
+  if (useStore.getState().settings?.autoReconnect === false) return false
+  return c.retry.next(
+    (left, n) => setError(paneId, { text: `The connection was lost. Reconnecting in ${left}s, try ${n}.`, retrying: true }),
+    () => {
+      c.retrying = true
+      void connect(paneId, c)
+    }
+  )
+}
+
+export function stopRdpRetry(paneId: string): void {
+  conns.get(paneId)?.retry.stop()
+  setError(paneId, { text: 'The connection was lost.' })
+}
+
 export function reconnectRdp(paneId: string): void {
   const c = conns.get(paneId)
   if (!c) return
+  c.retry.stop()
+  c.retrying = false
   c.attempts = 0
   void connect(paneId, c)
 }
@@ -201,6 +232,7 @@ export function reconnectRdp(paneId: string): void {
 export function disposeRdp(paneId: string): void {
   const c = conns.get(paneId)
   if (!c) return
+  c.retry.stop()
   c.gen++
   shutdown(c)
   conns.delete(paneId)

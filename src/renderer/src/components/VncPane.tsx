@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, errorMessage } from '../api'
 import { toast, useStore, type Pane } from '../store'
-import { attachVnc, focusVnc, reconnectVnc, sendCtrlAltDel, sendVncClipboard, setVncView, vncStatsLine, vncView, type VncQuality, type VncScale, type VncView } from '../vnc'
+import { attachVnc, focusVnc, reconnectVnc, stopVncRetry, sendCtrlAltDel, sendVncClipboard, setVncView, vncStatsLine, vncView, type VncQuality, type VncScale, type VncView } from '../vnc'
 
 export function VncPane(props: { pane: Pane; visible: boolean; active: boolean; header?: ReactNode }): JSX.Element {
   const { pane, visible, active } = props
@@ -80,7 +80,7 @@ export function VncPane(props: { pane: Pane; visible: boolean; active: boolean; 
           onClick={() => pane.sessionId && api.openVncExternal(pane.sessionId).catch((e) => toast(errorMessage(e), true))}
           title="Open in the system's VNC app (Screen Sharing on macOS)"
         >
-          Open in native client
+          Native client
         </button>
       </div>
       <div className="rdp-screen">
@@ -90,9 +90,12 @@ export function VncPane(props: { pane: Pane; visible: boolean; active: boolean; 
         {error && (
           <div className="rdp-overlay error">
             <div>{error.text}</div>
-            <button className="primary" onClick={() => reconnectVnc(pane.id)}>
-              Reconnect
-            </button>
+            <div className="rdp-overlay-actions">
+              <button className="primary" onClick={() => reconnectVnc(pane.id)}>
+                {error.retrying ? 'Now' : 'Reconnect'}
+              </button>
+              {error.retrying && <button onClick={() => stopVncRetry(pane.id)}>Stop</button>}
+            </div>
           </div>
         )}
       </div>

@@ -19,7 +19,7 @@ export function SettingsDialog(): JSX.Element {
     const dangerWatchList = (s.dangerWatchList ?? []).map((w) => w.trim()).filter(Boolean)
     useStore.setState({ settings: await api.setSettings({ ...s, dangerWatchList }), modal: null })
   }
-  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'warnDangerousCommands' | 'sftpAutoOpen', label: string): JSX.Element => (
+  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'autoReconnect' | 'warnDangerousCommands' | 'sftpAutoOpen', label: string): JSX.Element => (
     <label className="check">
       <input type="checkbox" checked={s[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
     </label>
@@ -85,6 +85,8 @@ export function SettingsDialog(): JSX.Element {
         <input type="checkbox" checked={s.serverStats ?? true} onChange={(e) => set('serverStats', e.target.checked)} /> Show
         server CPU / RAM / disk under SSH terminals
       </label>
+      <h4>Connections</h4>
+      {check('autoReconnect', 'Reconnect by itself when a connection drops (SSH, Telnet, RDP, VNC)')}
       <h4>Copy &amp; paste</h4>
       {check('copyOnSelect', 'Copy text on selection')}
       {check('rightClickPaste', 'Right-click pastes')}

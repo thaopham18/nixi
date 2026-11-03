@@ -5,6 +5,7 @@ import { closePane, openSessionInSplit } from '../actions'
 import { StatsBar } from './StatsBar'
 import { RdpPane } from './RdpPane'
 import { VncPane } from './VncPane'
+import { ToolIcon } from './Icons'
 
 export function TabView({ tab, visible }: { tab: Tab; visible: boolean }): JSX.Element {
   const [zoomed, setZoomed] = useState<string>()
@@ -73,13 +74,13 @@ function PaneHeader(props: { pane: Pane; zoomed?: boolean; onZoom?: () => void; 
       {props.onZoom && (
         <>
           <button className="icon" onClick={props.onZoom} title={props.zoomed ? 'Restore split' : 'Maximize this pane'}>
-            {props.zoomed ? '🗗' : '🗖'}
+            <ToolIcon name={props.zoomed ? 'restore' : 'maximize'} />
           </button>
           <button className="icon" onClick={() => useStore.getState().detachPane(pane.id)} title="Move to its own tab">
-            ⇱
+            <ToolIcon name="detach" />
           </button>
           <button className="icon" onClick={() => closePane(pane.id)} title="Close pane">
-            ✕
+            <ToolIcon name="close" />
           </button>
         </>
       )}
@@ -261,14 +262,14 @@ function SearchBar({ paneId }: { paneId: string }): JSX.Element {
         <input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)} />
         .*
       </label>
-      <button className="icon" onClick={() => search?.findPrevious(q, opts)}>
-        ↑
+      <button className="icon" title="Previous match" onClick={() => search?.findPrevious(q, opts)}>
+        <ToolIcon name="up" />
       </button>
-      <button className="icon" onClick={() => search?.findNext(q, opts)}>
-        ↓
+      <button className="icon" title="Next match" onClick={() => search?.findNext(q, opts)}>
+        <ToolIcon name="down" />
       </button>
-      <button className="icon" onClick={close}>
-        ✕
+      <button className="icon" title="Close search" onClick={close}>
+        <ToolIcon name="close" />
       </button>
     </div>
   )

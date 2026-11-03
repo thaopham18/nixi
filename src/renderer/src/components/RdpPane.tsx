@@ -1,7 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { api, errorMessage } from '../api'
 import { toast, useStore, type Pane } from '../store'
-import { attachRdp, rdpUi, reconnectRdp, resizeRdp } from '../rdp'
+import { attachRdp, rdpUi, reconnectRdp, stopRdpRetry, resizeRdp } from '../rdp'
+import { ToolIcon } from './Icons'
 
 export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; header?: ReactNode }): JSX.Element {
   const { pane, visible, active } = props
@@ -50,7 +51,8 @@ export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; 
           Ctrl+Alt+Del
         </button>
         <button disabled={!connected} onClick={() => rdpUi(pane.id)?.metaKey()} title="Send the Windows key">
-          ⊞ Win
+          <ToolIcon name="windows" />
+          Win
         </button>
         <button className="tb-medium" onClick={() => reconnectRdp(pane.id)}>
           Reconnect
@@ -60,7 +62,7 @@ export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; 
           onClick={() => pane.sessionId && api.openRdpExternal(pane.sessionId).catch((e) => toast(errorMessage(e), true))}
           title="Open in the native client (Windows App / mstsc): smoother, hardware video decoding"
         >
-          Open in native client
+          Native client
         </button>
       </div>
       <div className="rdp-screen">
@@ -70,9 +72,12 @@ export function RdpPane(props: { pane: Pane; visible: boolean; active: boolean; 
           <div className="rdp-overlay error">
             <div>{error.text}</div>
             {error.detail && <div className="muted small">{error.detail}</div>}
-            <button className="primary" onClick={() => reconnectRdp(pane.id)}>
-              Reconnect
-            </button>
+            <div className="rdp-overlay-actions">
+              <button className="primary" onClick={() => reconnectRdp(pane.id)}>
+                {error.retrying ? 'Now' : 'Reconnect'}
+              </button>
+              {error.retrying && <button onClick={() => stopRdpRetry(pane.id)}>Stop</button>}
+            </div>
           </div>
         )}
       </div>

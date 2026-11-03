@@ -5,7 +5,7 @@ import { api, uid } from '../api'
 import { activePaneOf, promptText, showMenu, toast, useStore, type MenuItem } from '../store'
 import { importFromMobaXterm, newSession, openRdpExternal, openSession, openSessionInSplit, openVncExternal } from '../actions'
 import { SftpPanel } from './SftpPanel'
-import { Caret, ClockIcon, FolderIcon, SessionIcon } from './Icons'
+import { Caret, ClockIcon, FolderIcon, SessionIcon, ToolIcon } from './Icons'
 
 
 export function Sidebar(): JSX.Element {
@@ -321,7 +321,7 @@ function SessionTree(): JSX.Element {
       <div className="sidebar-search">
         <input placeholder="Search sessions…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <button className="icon" onClick={() => newSession()} title="New session">
-          ＋
+          <ToolIcon name="plus" />
         </button>
       </div>
       <div

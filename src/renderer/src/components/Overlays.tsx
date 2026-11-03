@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Credential } from '@shared/types'
 import { api } from '../api'
 import { useStore } from '../store'
+import { ToolIcon } from './Icons'
 
 export function Modal(props: {
   title: string
@@ -23,7 +24,7 @@ export function Modal(props: {
         <div className="modal-header">
           <span>{props.title}</span>
           <button className="icon" onClick={props.onClose} title="Close">
-            ✕
+            <ToolIcon name="close" />
           </button>
         </div>
         <div className="modal-body">{props.children}</div>

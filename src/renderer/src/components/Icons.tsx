@@ -83,7 +83,7 @@ export function Caret({ open }: { open: boolean }): JSX.Element {
   )
 }
 
-type ToolName = 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
+type ToolName = 'close' | 'down' | 'chevDown' | 'maximize' | 'restore' | 'detach' | 'record' | 'stop' | 'windows' | 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
 
 const toolPaths: Record<ToolName, JSX.Element> = {
   up: <path d="M8 13V3.5M3.8 7.7 8 3.5l4.2 4.2" />,
@@ -102,6 +102,20 @@ const toolPaths: Record<ToolName, JSX.Element> = {
   pin: <path d="M6 2.5h4M6.8 2.5v3.6L4.6 8.6h6.8L9.2 6.1V2.5M8 8.6v4.9" />,
   trash: <path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.1 4.3l.7 8.9h6.4l.7-8.9M6.8 6.8v4M9.2 6.8v4" />,
   plus: <path d="M8 3.5v9M3.5 8h9" />,
+  close: <path d="m4 4 8 8M12 4l-8 8" />,
+  down: <path d="M8 3v9.5M3.8 8.3 8 12.5l4.2-4.2" />,
+  chevDown: <path d="m3.5 6 4.5 4.5L12.5 6" />,
+  maximize: <rect x="3" y="3" width="10" height="10" rx="1.6" />,
+  restore: (
+    <>
+      <rect x="2.8" y="5.2" width="8" height="8" rx="1.4" />
+      <path d="M5.2 5.2v-1c0-.8.6-1.4 1.4-1.4h5.2c.8 0 1.4.6 1.4 1.4v5.2c0 .8-.6 1.4-1.4 1.4h-1" />
+    </>
+  ),
+  detach: <path d="M7 3H4.4C3.6 3 3 3.6 3 4.4v7.2c0 .8.6 1.4 1.4 1.4h7.2c.8 0 1.4-.6 1.4-1.4V9M9.5 3H13v3.5M13 3 8 8" />,
+  record: <circle cx="8" cy="8" r="4" fill="currentColor" stroke="none" />,
+  stop: <rect x="4" y="4" width="8" height="8" rx="1.2" fill="currentColor" stroke="none" />,
+  windows: <path d="M3 3h4.3v4.3H3zM8.7 3H13v4.3H8.7zM3 8.7h4.3V13H3zM8.7 8.7H13V13H8.7z" />,
   terminal: (
     <>
       <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2" />

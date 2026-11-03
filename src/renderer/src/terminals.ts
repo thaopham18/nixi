@@ -7,6 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import type { Macro, Session, Settings } from '@shared/types'
 import { MacroRecorder } from '@shared/macro'
 import { commandOnScreen, findDanger, InputLine, macroLines } from '@shared/danger'
+import { endsSession, isNetworkError, Retry, RETRY_LIMIT } from '@shared/reconnect'
 import { api, errorMessage, isMac } from './api'
 import { termTheme } from './themes'
 import { allPanes, askChoice, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
@@ -19,7 +20,15 @@ interface Entry {
   paneId: string
   /** what was typed since the last Enter, for the dangerous command check */
   typed: InputLine
+  retry: Retry
+  /** when the user last asked to end the session (exit, Ctrl-D): closing then is no drop */
+  leftAt?: number
+  /** the try under way belongs to the reconnect loop */
+  reconnecting?: boolean
 }
+
+/** A full-screen program that lost its connection can't switch these back itself. */
+const RESET_MODES = '\x1b[?1049l\x1b[?1l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[0m'
 
 const entries = new Map<string, Entry>()
 const paneByConn = new Map<string, string>()
@@ -72,9 +81,18 @@ api.onStatus((s) => {
       return { serverStats }
     })
     store.updatePane(paneId, { state: 'closed', connId: undefined })
-    entries
-      .get(paneId)
-      ?.term.write(`\r\n\x1b[33m[Session closed${s.message ? `: ${s.message}` : ''}. Press R to reconnect]\x1b[0m\r\n`)
+    const entry = entries.get(paneId)
+    if (!entry) return
+    entry.term.write(RESET_MODES)
+    entry.typed = new InputLine()
+    entry.retry.down()
+    const left = entry.leftAt !== undefined && Date.now() - entry.leftAt < 5000
+    if (s.lost && !left && store.settings?.autoReconnect !== false && findPane(paneId)?.sessionId) {
+      entry.term.write(`\r\n\x1b[33m[Connection lost${s.message ? `: ${s.message}` : ''}]\x1b[0m\r\n`)
+      waitToReconnect(paneId)
+    } else {
+      entry.term.write(`\r\n\x1b[33m[Session closed${s.message ? `: ${s.message}` : ''}. Press R to reconnect]\x1b[0m\r\n`)
+    }
   }
 })
 
@@ -174,16 +192,32 @@ const askingDanger = new Set<string>()
 function handleInput(paneId: string, data: string): void {
   const pane = findPane(paneId)
   if (!pane) return
-  if (pane.state === 'closed' && (data === 'r' || data === 'R')) {
-    connectPane(paneId)
+  const entry = entries.get(paneId)
+  // Esc stops the reconnect loop, also while a try is under way.
+  if (data === '\x1b' && entry && !pane.connId && (entry.retry.waiting || (pane.state === 'connecting' && entry.reconnecting))) {
+    entry.retry.stop()
+    entry.term.write('\r\x1b[2K\x1b[33m[Stopped reconnecting. Press R to reconnect]\x1b[0m\r\n')
     return
   }
-  const entry = entries.get(paneId)
+  if (pane.state === 'closed' && (data === 'r' || data === 'R')) {
+    if (entry?.retry.waiting) {
+      entry.retry.skip()
+      entry.term.write('\r\x1b[2K')
+      void connectPane(paneId, true)
+    } else {
+      entry?.retry.stop()
+      void connectPane(paneId)
+    }
+    return
+  }
+  if (entry && data === '\x04') entry.leftAt = Date.now()
   const lines = entry?.typed.feed(data)
   // Full-screen programs (vim, less…) have no command line: Enter there runs nothing.
   if (!entry || !lines || !pane.connId || entry.term.buffer.active.type === 'alternate') return sendInput(paneId, data)
   if (askingDanger.has(paneId)) return // the dialog is up; a late Enter must not slip through
-  const hits = dangerIn([lines.join('\n'), screenCommand(entry.term)])
+  const onScreen = screenCommand(entry.term)
+  if (endsSession(lines[lines.length - 1] ?? '') || endsSession(onScreen)) entry.leftAt = Date.now()
+  const hits = dangerIn([lines.join('\n'), onScreen])
   if (!hits.length) return sendInput(paneId, data)
   askingDanger.add(paneId)
   void askDanger(paneId, hits).then((ok) => {
@@ -347,7 +381,7 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
     true
   )
 
-  const entry = { term, fit, search, paneId, typed: new InputLine() }
+  const entry: Entry = { term, fit, search, paneId, typed: new InputLine(), retry: new Retry() }
   entries.set(paneId, entry)
   return entry
 }
@@ -359,6 +393,7 @@ export function disposeTerminal(paneId: string): void {
     api.closeConn(pane.connId)
     paneByConn.delete(pane.connId)
   }
+  entry?.retry.stop()
   entry?.term.dispose()
   entries.delete(paneId)
   if (entry) repaintAll()
@@ -394,7 +429,26 @@ function isPassphraseError(msg: string): boolean {
   return /passphrase|encrypted private key/i.test(msg)
 }
 
-export async function connectPane(paneId: string): Promise<void> {
+/** Count down to the next try on the terminal's last line, unless it is time to give up. */
+function waitToReconnect(paneId: string): void {
+  const entry = entries.get(paneId)
+  if (!entry) return
+  const line = '\r\x1b[2K\x1b[33m'
+  const waiting = entry.retry.next(
+    (left, n) => entry.term.write(`${line}[Reconnecting in ${left}s, try ${n}. R: now, Esc: stop]\x1b[0m`),
+    () => {
+      entry.term.write('\r\x1b[2K')
+      void connectPane(paneId, true)
+    }
+  )
+  if (!waiting) {
+    const why = entry.retry.stopped ? 'Stopped reconnecting' : `No connection after ${RETRY_LIMIT} tries`
+    entry.term.write(`${line}[${why}. Press R to reconnect]\x1b[0m\r\n`)
+  }
+}
+
+/** `auto`: a try of the reconnect loop, which keeps quiet and takes nobody's focus. */
+export async function connectPane(paneId: string, auto = false): Promise<void> {
   const pane = findPane(paneId)
   const entry = entries.get(paneId)
   if (!pane || !entry) return
@@ -406,7 +460,8 @@ export async function connectPane(paneId: string): Promise<void> {
     entry.term.write(`\x1b[31m${text}\x1b[0m\r\n\x1b[33m[Press R to retry]\x1b[0m\r\n`)
   }
   store.updatePane(paneId, { state: 'connecting' })
-  if (sessionId) entry.term.write(`\x1b[90mConnecting to ${pane.title}…\x1b[0m\r\n`)
+  entry.reconnecting = auto
+  if (sessionId) entry.term.write(auto ? `\r\x1b[2K\x1b[90mReconnecting to ${pane.title}…\x1b[0m` : `\x1b[90mConnecting to ${pane.title}…\x1b[0m\r\n`)
 
   let { username, password } = sessionId ? typedLogin(sessionId) : ({} as { username?: string; password?: string })
   let typed: LoginAnswer | undefined
@@ -430,6 +485,10 @@ export async function connectPane(paneId: string): Promise<void> {
         return
       }
       paneByConn.set(res.connId, paneId)
+      entry.retry.up()
+      entry.reconnecting = false
+      entry.leftAt = undefined
+      if (auto) entry.term.write('\r\x1b[2K\x1b[32m[Reconnected]\x1b[0m\r\n')
       quiet(res.connId, 2500)
       store.updatePane(paneId, { connId: res.connId, state: 'connected', isSsh: res.isSsh })
       // The pane may have been resized while connecting (split, tile, sidebar): those resizes
@@ -437,12 +496,22 @@ export async function connectPane(paneId: string): Promise<void> {
       fitPane(paneId)
       api.resize(res.connId, entry.term.cols, entry.term.rows)
       if (typed && sessionId) await keepLogin(sessionId, typed, secretName)
+      if (auto) return
       const s = useStore.getState()
       if (res.isSsh && s.settings?.sftpAutoOpen) s.set({ sidebarOpen: true, sidebarTab: 'sftp' })
       entry.term.focus()
       return
     } catch (err) {
       const msg = errorMessage(err)
+      if (!findPane(paneId)) return
+      // connectSsh reports a link that closed before the login as a missing password.
+      const dropped = /no password given/.test(msg) && (password !== undefined || Boolean(session()?.hasSecret))
+      if (auto && (isNetworkError(msg) || dropped)) {
+        store.updatePane(paneId, { state: 'closed' })
+        return waitToReconnect(paneId)
+      }
+      if (auto) entry.term.write('\r\x1b[2K')
+      entry.reconnecting = false
       // A jump host's failure says so: this server's password wouldn't help.
       const viaJump = msg.startsWith('Jump host')
       const needsPassphrase = !viaJump && isPassphraseError(msg)

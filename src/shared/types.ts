@@ -76,6 +76,8 @@ export interface Settings {
   copyOnSelect: boolean
   rightClickPaste: boolean
   warnMultilinePaste: boolean
+  /** try again by itself when a connection drops */
+  autoReconnect: boolean
   /** ask before running commands that are hard to undo (rm -rf, DROP TABLE…) */
   warnDangerousCommands: boolean
   /** more words or commands to ask about, beyond the built-in rules */
@@ -136,6 +138,8 @@ export interface ConnStatus {
   connId: string
   state: ConnState
   message?: string
+  /** it dropped without anyone ending it: worth reconnecting */
+  lost?: boolean
 }
 
 export interface OpenConnRequest {

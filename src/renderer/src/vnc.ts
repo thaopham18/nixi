@@ -5,6 +5,7 @@ import { VNC_PROXY_ERROR } from '@shared/vnc'
 import { api, errorMessage } from './api'
 import { findPane, promptLogin, useStore, type LoginAnswer } from './store'
 import { forgetTypedPassword, keepLogin, typedLogin } from './login'
+import { isNetworkError, Retry } from '@shared/reconnect'
 
 export type VncScale = NonNullable<Session['vncScale']>
 export type VncQuality = NonNullable<Session['vncQuality']>
@@ -26,6 +27,9 @@ const QUALITY: Record<VncQuality, { quality: number; compression: number }> = {
  * which gets moved between panes), so moving a pane does not drop the session.
  */
 interface VncConn extends VncView {
+  retry: Retry
+  /** the try under way belongs to the reconnect loop */
+  retrying?: boolean
   rfb?: RFB
   el?: HTMLElement
   host: HTMLElement
@@ -44,7 +48,7 @@ interface VncConn extends VncView {
 
 const conns = new Map<string, VncConn>()
 
-function setError(paneId: string, error?: { text: string }): void {
+function setError(paneId: string, error?: { text: string; retrying?: boolean }): void {
   useStore.setState((s) => {
     const paneErrors = { ...s.paneErrors }
     if (error) paneErrors[paneId] = error
@@ -198,6 +202,8 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
     rfb.addEventListener('connect', () => {
       if (stale()) return
       wasConnected = true
+      c.retry.up()
+      c.retrying = false
       c.attempts = 0
       c.askPassword = false
       update({ state: 'connected' })
@@ -224,6 +230,11 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
       }
       const clean = (e as CustomEvent<{ clean: boolean }>).detail.clean
       update({ state: 'closed' })
+      if (wasConnected) c.retry.down()
+      // noVNC calls it clean even when the server dies (the proxy closes the socket politely), and a
+      // VNC session has no logoff: going away while connected is always a drop.
+      const dropped = wasConnected ? !failure?.auth : c.retrying && !failure?.auth && (!failure || isNetworkError(failure.text))
+      if (dropped && retryLater(paneId, c)) return
       setError(paneId, {
         text: failure?.text ?? (wasConnected ? (clean ? 'The server ended the session.' : 'The connection was lost.') : 'Could not connect to the VNC server.')
       })
@@ -231,6 +242,7 @@ async function connect(paneId: string, c: VncConn): Promise<void> {
   } catch (err) {
     if (stale()) return
     update({ state: 'closed' })
+    if (c.retrying && isNetworkError(errorMessage(err)) && retryLater(paneId, c)) return
     setError(paneId, { text: errorMessage(err) })
   }
 }
@@ -248,14 +260,33 @@ export function attachVnc(paneId: string, host: HTMLElement, view: VncView): voi
     if (known.el && known.el.parentElement !== host) host.appendChild(known.el)
     return
   }
-  const c: VncConn = { gen: 0, askPassword: false, attempts: 0, host, ...view }
+  const c: VncConn = { gen: 0, askPassword: false, attempts: 0, host, retry: new Retry(), ...view }
   conns.set(paneId, c)
   void connect(paneId, c)
+}
+
+/** Show the countdown and try again; false when auto reconnect is off or out of tries. */
+function retryLater(paneId: string, c: VncConn): boolean {
+  if (useStore.getState().settings?.autoReconnect === false) return false
+  return c.retry.next(
+    (left, n) => setError(paneId, { text: `The connection was lost. Reconnecting in ${left}s, try ${n}.`, retrying: true }),
+    () => {
+      c.retrying = true
+      void connect(paneId, c)
+    }
+  )
+}
+
+export function stopVncRetry(paneId: string): void {
+  conns.get(paneId)?.retry.stop()
+  setError(paneId, { text: 'The connection was lost.' })
 }
 
 export function reconnectVnc(paneId: string): void {
   const c = conns.get(paneId)
   if (!c) return
+  c.retry.stop()
+  c.retrying = false
   c.attempts = 0
   void connect(paneId, c)
 }
@@ -263,6 +294,7 @@ export function reconnectVnc(paneId: string): void {
 export function disposeVnc(paneId: string): void {
   const c = conns.get(paneId)
   if (!c) return
+  c.retry.stop()
   c.gen++
   shutdown(c)
   conns.delete(paneId)

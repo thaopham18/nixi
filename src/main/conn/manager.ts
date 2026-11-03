@@ -87,12 +87,16 @@ async function openSsh(
   stream.on('data', (d: Buffer) => emit('conn:data', id, out.write(d)))
   stream.stderr.on('data', (d: Buffer) => emit('conn:data', id, errOut.write(d)))
   let closed = false
-  const onClose = (message?: string): void => {
+  // A shell that exits reports its code; one killed by a signal (server going down) or a link
+  // that just goes away does not.
+  let exited = false
+  stream.on('exit', (code: number | null) => (exited = code !== null && code !== undefined))
+  const onClose = (message?: string, lost = !exited): void => {
     if (closed) return
     closed = true
     conns.delete(id)
     client.end()
-    emit('conn:status', { connId: id, state: 'closed', message })
+    emit('conn:status', { connId: id, state: 'closed', message, lost })
   }
   stream.on('close', () => onClose())
   client.on('error', (e) => onClose(e.message))
@@ -104,7 +108,7 @@ async function openSsh(
     client,
     write: (d) => stream.write(d),
     resize: (c, r) => stream.setWindow(r, c, 0, 0),
-    close: () => onClose()
+    close: () => onClose(undefined, false)
   }
   return conn
 }
@@ -148,16 +152,17 @@ async function openTelnet(id: string, t: TelnetTarget, cols: number, rows: numbe
     }
   })
   let closed = false
-  const onClose = (message?: string): void => {
+  // Telnet has no exit status: the renderer tells `exit` from a drop by what was just typed.
+  const onClose = (message?: string, lost = true): void => {
     if (closed) return
     closed = true
     conns.delete(id)
     sock.destroy()
-    emit('conn:status', { connId: id, state: 'closed', message })
+    emit('conn:status', { connId: id, state: 'closed', message, lost })
   }
   sock.on('close', () => onClose())
   sock.on('error', (e) => onClose(e.message))
-  return { id, write, resize: (c, r) => telnet.resize(c, r), close: () => onClose() }
+  return { id, write, resize: (c, r) => telnet.resize(c, r), close: () => onClose(undefined, false) }
 }
 
 export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {

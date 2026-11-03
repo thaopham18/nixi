@@ -45,29 +45,34 @@ export function Toolbar(): JSX.Element {
       </button>
       <button onClick={macroMenu} className={recording ? 'recording' : ''} title="Macros">
         {recording ? (
-          '● REC'
+          <>
+            <ToolIcon name="record" />
+            <span className="label">REC</span>
+          </>
         ) : (
           <>
             <ToolIcon name="bolt" />
             <span className="label">Macros</span>
-            <span className="chevron">▾</span>
+            <ToolIcon name="chevDown" />
           </>
         )}
       </button>
       {recording && (
         <button className="recording" onClick={() => void toggleRecording()}>
-          ■ Stop
+          <ToolIcon name="stop" />
+          <span className="label">Stop</span>
         </button>
       )}
       <button
         className={multiExec ? 'active-toggle' : ''}
         onClick={() => handleMenu('multiExec')}
-        title="Send keystrokes to all terminals"
+        title={`Send keystrokes to all terminals: ${multiExec ? 'on' : 'off'}`}
+        aria-pressed={multiExec}
       >
         <ToolIcon name="multi" />
-        <span className="label">Multi-exec</span> {multiExec ? 'ON' : 'OFF'}
+        <span className="label">Multi-exec</span>
       </button>
-      <button onClick={() => handleMenu('settings')} title="Settings">
+      <button className="square" onClick={() => handleMenu('settings')} title="Settings">
         <ToolIcon name="gear" />
       </button>
     </div>

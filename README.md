@@ -115,6 +115,7 @@ Bản `.exe` chưa ký nên SmartScreen sẽ cảnh báo lần đầu: More info
 - RDP: chuyển file qua clipboard, âm thanh, nhiều màn hình.
 - Telnet / Serial, Mosh, X11 forwarding (XQuartz).
 - Snippets, ghi log session ra file; gộp thay đổi khi cùng một database được sửa trên hai máy.
+- Mở nhiều database cùng lúc, mỗi database một cửa sổ.
 
 ## Cấu trúc
 

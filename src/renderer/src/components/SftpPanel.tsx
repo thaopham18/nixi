@@ -352,7 +352,7 @@ function TransferQueue(): JSX.Element | null {
             </div>
             {running && (
               <button className="icon" onClick={() => void api.sftpCancel(t.id)} title="Cancel">
-                ✕
+                <ToolIcon name="close" />
               </button>
             )}
           </div>

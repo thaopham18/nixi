@@ -7,6 +7,7 @@ import { activePane, toast, useStore } from '../store'
 import { runMacro } from '../terminals'
 import { toggleRecording } from '../actions'
 import { Modal } from './Overlays'
+import { ToolIcon } from './Icons'
 
 const help = `> command        send command + Enter
 >> raw\\n         send raw text (escapes \\n \\r \\t \\e \\x03)
@@ -119,7 +120,7 @@ export function MacroManager(): JSX.Element {
                       moveTo(m.id, i - 1)
                     }}
                   >
-                    ↑
+                    <ToolIcon name="up" />
                   </button>
                   <button
                     className="icon"
@@ -130,13 +131,16 @@ export function MacroManager(): JSX.Element {
                       moveTo(m.id, i + 2)
                     }}
                   >
-                    ↓
+                    <ToolIcon name="down" />
                   </button>
                 </span>
               )}
             </div>
           ))}
-          <button onClick={() => select(undefined)}>＋ New macro</button>
+          <button onClick={() => select(undefined)}>
+            <ToolIcon name="plus" />
+            New macro
+          </button>
           <button
             className={recording ? 'recording' : ''}
             onClick={() => {
@@ -144,7 +148,8 @@ export function MacroManager(): JSX.Element {
               void toggleRecording()
             }}
           >
-            {recording ? '■ Stop recording' : '● Record from terminal'}
+            <ToolIcon name={recording ? 'stop' : 'record'} />
+            {recording ? 'Stop recording' : 'Record from terminal'}
           </button>
         </div>
         <div className="macro-editor">
