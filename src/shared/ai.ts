@@ -135,6 +135,27 @@ export function parseProposal(input: unknown): ParsedProposal {
   return { command: command.trim(), reason: reason.trim() }
 }
 
+const NOT_A_COMMAND_BLOCK = /^(?:text|plaintext|plain|txt|output|log|json|yaml|yml|xml|html|diff|markdown|md)$/i
+const COMMAND_WORD = /^(?:[a-z][\w+-]*|\.{1,2}\/\S+|[A-Z][a-z]+-[A-Z]\w*)$/
+const PATH_WORD = /^(?:~?\/)\S+$/
+// `cat <file>` would run as a redirect, and `ls [dir]` or `tail ...` were never meant literally.
+const PLACEHOLDER = /<[^<>]*>|\[[^\]]*\]|\.\.\.|…|\bYOUR_|\byour[-_ ]/
+
+/**
+ * A command the answer wrote out in code, for a model that names one without calling the tool. Only ever
+ * offered with a Run button: its text can come from what a server printed, so nothing runs by itself.
+ */
+export function runnableCommand(code: string, language = ''): string | undefined {
+  if (NOT_A_COMMAND_BLOCK.test(language.trim())) return undefined
+  const line = code.trim().replace(/^\$\s+/, '')
+  const parsed = parseProposal({ command: line, reason: 'named in the answer' })
+  if ('error' in parsed) return undefined
+  if (PLACEHOLDER.test(line)) return undefined
+  const [first, ...rest] = line.split(/\s+/)
+  // A path alone is a place being talked about; with arguments it is a program.
+  return COMMAND_WORD.test(first) || (PATH_WORD.test(first) && rest.length) ? line : undefined
+}
+
 /** A program waiting for a secret would take a command as its answer, and may echo it nowhere. */
 export function asksForSecret(line: string): boolean {
   return /(?:pass(?:word|phrase|code)|verification code|one-time|\botp\b|\bpin\b)[^\n]*[:?]\s*$/i.test(line)

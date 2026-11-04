@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiModelOf, asksForSecret, chatModelIds, looksLikePrompt, parseAiBaseUrl, MAX_ATTACH_CHARS, MAX_ATTACH_LINES, MAX_COMMAND_LENGTH, parseProposal, prepareAttachment, wrapTerminalOutput } from '../src/shared/ai'
+import { aiModelOf, asksForSecret, chatModelIds, looksLikePrompt, parseAiBaseUrl, MAX_ATTACH_CHARS, MAX_ATTACH_LINES, MAX_COMMAND_LENGTH, parseProposal, prepareAttachment, wrapTerminalOutput, runnableCommand } from '../src/shared/ai'
 import { InputLine } from '../src/shared/danger'
 import { MASK } from '../src/shared/redact'
 
@@ -154,5 +154,34 @@ describe('looksLikePrompt', () => {
 
   it.each(['Compiling app', 'total 48', '', 'Continue? [y/N] ', 'Password:'])('leaves %s alone', (l) => {
     expect(looksLikePrompt(l)).toBe(false)
+  })
+})
+
+describe('runnableCommand', () => {
+  it.each([
+    ['ls', 'ls'],
+    ['ls -la /var/log', 'ls -la /var/log'],
+    ['$ df -h', 'df -h'],
+    ['  uname -a ', 'uname -a'],
+    ['./deploy.sh', './deploy.sh'],
+    ['/usr/bin/env python3', '/usr/bin/env python3'],
+    ['Get-Process', 'Get-Process'],
+    ['show ip route', 'show ip route'],
+    ['rm -rf /tmp/x', 'rm -rf /tmp/x']
+  ])('offers %s', (code, command) => expect(runnableCommand(code)).toBe(command))
+
+  it.each(['notes.txt', '/etc/hosts', '~/app', '-a', '42', 'Hello there', '', '   ', 'cat <file>', 'ls [dir]', 'tail ...', 'ssh your-server', 'a\nb', 'ls\u202e', 'ls\u0007'])(
+    'does not offer %j',
+    (code) => expect(runnableCommand(code)).toBeUndefined()
+  )
+
+  it('goes by the language of a block', () => {
+    expect(runnableCommand('ls', 'bash')).toBe('ls')
+    expect(runnableCommand('ls', 'console')).toBe('ls')
+    for (const language of ['text', 'plaintext', 'output', 'JSON', ' log ']) expect(runnableCommand('ls', language)).toBeUndefined()
+  })
+
+  it('refuses what parseProposal refuses', () => {
+    expect(runnableCommand('x'.repeat(5000))).toBeUndefined()
   })
 })

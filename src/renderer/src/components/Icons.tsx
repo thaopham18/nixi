@@ -83,7 +83,7 @@ export function Caret({ open }: { open: boolean }): JSX.Element {
   )
 }
 
-type ToolName = 'keyboard' | 'shield' | 'sparkle' | 'folder' | 'database' | 'close' | 'down' | 'chevDown' | 'maximize' | 'restore' | 'detach' | 'record' | 'stop' | 'windows' | 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
+type ToolName = 'play' | 'keyboard' | 'shield' | 'sparkle' | 'folder' | 'database' | 'close' | 'down' | 'chevDown' | 'maximize' | 'restore' | 'detach' | 'record' | 'stop' | 'windows' | 'plus' | 'terminal' | 'tunnel' | 'bolt' | 'key' | 'multi' | 'gear' | 'up' | 'home' | 'refresh' | 'folderPlus' | 'upload' | 'download' | 'trash' | 'pin' | 'chevLeft' | 'chevRight'
 
 const toolPaths: Record<ToolName, JSX.Element> = {
   keyboard: (
@@ -138,6 +138,7 @@ const toolPaths: Record<ToolName, JSX.Element> = {
     </>
   ),
   tunnel: <path d="M2.5 5.5h10m-2.5-2.5 2.5 2.5-2.5 2.5M13.5 10.5h-10m2.5-2.5-2.5 2.5 2.5 2.5" />,
+  play: <path d="M5 3.3v9.4L12.6 8z" fill="currentColor" stroke="none" />,
   bolt: <path d="M9 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" />,
   key: (
     <>

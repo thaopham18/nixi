@@ -73,6 +73,17 @@ function openAi(req, res, state, api, route) {
       send({ role: 'assistant', tool_calls: [{ index: 0, id, type: 'function', function: { name: 'propose_command', arguments: args.slice(0, cut) }, ...extra }] })
       send({ tool_calls: [{ index: 0, function: { arguments: args.slice(cut) } }] })
     }
+    if (text.includes('EMPTYANSWER')) return end('stop')
+    // A model that names commands in its text instead of calling the tool.
+    const mention = /MENTION (\S.*)/.exec(text)
+    if (mention) {
+      send({ content: `Try \`${mention[1]}-inline\` or open \`notes.txt\` in \`/etc\`, or \`cat <file>\`.\n\n\`\`\`bash\n${mention[1]}-fence\n\`\`\`\n\n\`\`\`text\nls printed this\n\`\`\`\n` })
+      return end('stop')
+    }
+    if (text.includes('UNCLOSED')) {
+      send({ content: 'Then:\n```bash\nrm -rf /tmp/half' })
+      return end('length')
+    }
     if (text.includes('DROP')) {
       send({ content: 'partial answer' })
       return setTimeout(() => res.destroy(), 50)

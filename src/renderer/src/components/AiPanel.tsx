@@ -1,9 +1,9 @@
-import { AI_PROVIDERS, aiModelOf, aiProviderInfo, type AiModelInfo, type AiProviderId } from '@shared/ai'
+import { AI_PROVIDERS, aiModelOf, aiProviderInfo, runnableCommand, type AiModelInfo, type AiProviderId } from '@shared/ai'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Attachment } from '@shared/ai'
 import { api } from '../api'
-import { activePaneOf, askChoice, useStore, openSettings } from '../store'
-import { answerProposal, clearChat, EMPTY_CHAT, GENERAL_CHAT, outputOf, runProposal, sendAi, setAutoRun, stopAi, updateChat, type AiItem } from '../ai'
+import { activePaneOf, askChoice, showMenu, useStore, openSettings } from '../store'
+import { answerProposal, clearChat, EMPTY_CHAT, GENERAL_CHAT, outputOf, runMentioned, runProposal, sendAi, setAutoRun, stopAi, updateChat, type AiItem } from '../ai'
 import { attachableText, focusTerminal, runBlock } from '../terminals'
 import { ToolIcon } from './Icons'
 
@@ -43,19 +43,61 @@ function usePreview<T extends { raw: string }>(read: () => T | undefined): (T & 
 }
 
 /** Plain text with fenced code blocks; an open fence while streaming runs to the end. Never parsed as HTML. */
-function Rich({ text }: { text: string }): JSX.Element {
-  const parts = text.split(/```[^\n]*\n?/)
+function RunMentioned({ chatId, command }: { chatId: string; command: string }): JSX.Element | null {
+  // Still arriving, it may be only part of the command.
+  const busy = useStore((s) => s.aiChats[chatId]?.busy || s.aiChats[chatId]?.running)
+  if (busy || chatId === GENERAL_CHAT) return null
+  return (
+    <button className="icon ai-run" title={`Run in this terminal: ${command}`} aria-label={`Run ${command}`} onClick={() => void runMentioned(chatId, command)}>
+      <ToolIcon name="play" />
+    </button>
+  )
+}
+
+function InlineCode({ chatId, text }: { chatId: string; text: string }): JSX.Element {
   return (
     <>
-      {parts.map((part, i) =>
-        i % 2 ? (
-          <pre key={i} className="ai-code">
-            {part.replace(/\n$/, '')}
-          </pre>
-        ) : (
-          part.trim() && <p key={i}>{part.trim()}</p>
+      {text.split(/`([^`\n]+)`/).map((part, i) => {
+        if (i % 2 === 0) return part
+        const command = runnableCommand(part)
+        return (
+          <span key={i} className="ai-inline">
+            <code>{part}</code>
+            {command && <RunMentioned chatId={chatId} command={command} />}
+          </span>
         )
-      )}
+      })}
+    </>
+  )
+}
+
+function Rich({ chatId, text }: { chatId: string; text: string }): JSX.Element {
+  // The captures are each fence's language, so the rest alternates text and code.
+  const tokens = text.split(/```([^\n]*)\n?/)
+  const parts = tokens.filter((_, i) => i % 2 === 0)
+  const languages = tokens.filter((_, i) => i % 2 === 1)
+  // An even count: the last block never closed, because the answer was cut off.
+  const closed = parts.length % 2 === 1
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 0)
+          return (
+            part.trim() && (
+              <p key={i}>
+                <InlineCode chatId={chatId} text={part.trim()} />
+              </p>
+            )
+          )
+        const code = part.replace(/\n$/, '')
+        const command = closed || i < parts.length - 1 ? runnableCommand(code, languages[i - 1]) : undefined
+        return (
+          <div key={i} className="ai-code-block">
+            <pre className="ai-code">{code}</pre>
+            {command && <RunMentioned chatId={chatId} command={command} />}
+          </div>
+        )
+      })}
     </>
   )
 }
@@ -143,7 +185,7 @@ function Message({ chatId, item }: { chatId: string; item: AiItem }): JSX.Elemen
   if (item.kind === 'assistant')
     return (
       <div className="ai-msg assistant">
-        <Rich text={item.text} />
+        <Rich chatId={chatId} text={item.text} />
         {item.stopped && <div className="muted small">Stopped.</div>}
       </div>
     )
@@ -228,6 +270,13 @@ function Composer({ chatId, paneId, busy, draft }: { chatId: string; paneId?: st
       </div>
     </div>
   )
+}
+
+/** Right click copies what is selected, or the message under the mouse when nothing is. */
+function copyMenu(e: React.MouseEvent<HTMLElement>): void {
+  const selected = window.getSelection()?.toString()
+  const text = selected || (e.target as HTMLElement).closest<HTMLElement>('.ai-msg, .ai-proposal, .ai-notice')?.innerText
+  if (text) showMenu(e, [{ label: selected ? 'Copy' : 'Copy message', onClick: () => api.writeClipboard(text) }])
 }
 
 /** Which AI this chat talks to, and the way to change it without going through Settings. */
@@ -412,7 +461,7 @@ export function AiPanel(): JSX.Element {
   const thinking = chat.busy && chat.items[chat.items.length - 1]?.kind !== 'assistant'
   return (
     <div className="ai-panel">
-      <div className="ai-list" ref={list} onScroll={onScroll}>
+      <div className="ai-list" ref={list} onScroll={onScroll} onContextMenu={copyMenu}>
         {chat.items.length === 0 && (
           <div className="empty">
             <p>Nothing leaves this computer until you send a message, and then it goes to {provider.id === 'custom' ? 'your server' : provider.label} ({model || 'no model chosen yet'}). {settingsAuto ? 'In Auto, AI runs commands that only look and reads the output. Anything else waits for Run.' : 'Commands run only when you click Run.'}</p>

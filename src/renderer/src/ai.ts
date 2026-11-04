@@ -234,6 +234,15 @@ export async function runProposal(chatId: string, id: string, command: string): 
   }
 }
 
+/** A command the answer only named: typed in the same way, and the next message's attachment shows how it went. */
+export async function runMentioned(chatId: string, command: string): Promise<void> {
+  try {
+    await runProposed(chatId, command)
+  } catch (err) {
+    toast(errorMessage(err), true)
+  }
+}
+
 export function answerProposal(chatId: string, id: string, answer: AiAnswer): void {
   setProposal(chatId, id, { state: answer.kind === 'output' ? 'sent' : answer.kind })
   outputs.delete(id)

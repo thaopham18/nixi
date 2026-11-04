@@ -2344,8 +2344,29 @@ input.recording-key {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.ai-msg .ai-code {
+.ai-code-block {
+  position: relative;
   margin-bottom: 6px;
+}
+.ai-code-block .ai-run {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+.ai-inline code {
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.ai-run {
+  width: var(--ctl-h-xs);
+  height: var(--ctl-h-xs);
+  padding: 0;
+  vertical-align: middle;
+  color: var(--ok);
+  user-select: none;
 }
 .ai-attach-text {
   max-height: 140px;

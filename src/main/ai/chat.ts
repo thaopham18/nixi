@@ -143,17 +143,26 @@ async function run(chatId: string, chat: Chat, active: Active, rollback: number 
       model = models[0].id
     }
     for (let n = 0; n < MAX_TURNS; n++) {
+      let said = false
       const turn = await provider.turn({
         apiKey,
         system: getSettings().aiAutoRun ? SYSTEM_PROMPT + AUTO_RUN_NOTE : SYSTEM_PROMPT,
         model,
         history: chat.history,
         signal: abort.signal,
-        onText: (text) => current() && emit(chatId, { type: 'text', text }),
-        onRestart: () => current() && emit(chatId, { type: 'restart' })
+        onText: (text) => {
+          said = true
+          if (current()) emit(chatId, { type: 'text', text })
+        },
+        onRestart: () => {
+          said = false
+          if (current()) emit(chatId, { type: 'restart' })
+        }
       })
       if (!current()) return
       emit(chatId, { type: 'usage', tokens: turn.tokens })
+      // Small local models do this. Without a word on screen it looks as if the app hung.
+      if (turn.stop === 'end' && !said && !turn.toolCalls.length) return void emit(chatId, { type: 'failed', message: 'The model sent an empty answer. Send it again, or try a bigger model.', rolledBack: undo() })
       // A refusal can cut a tool call off, and so can the token limit: never act on that turn.
       if (turn.stop === 'refusal') return void emit(chatId, { type: 'refused', rolledBack: undo() })
       if (turn.stop === 'cutoff' && turn.toolCalls.length) return void emit(chatId, { type: 'failed', message: 'The answer was cut off before the command was complete. Ask again.', rolledBack: undo() })
