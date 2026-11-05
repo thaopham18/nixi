@@ -4,7 +4,7 @@
 // for a stand-in that accepts alice/good, the second uses the real one up to the TCP connection.
 //   npm run build && node scripts/e2e-login.mjs
 import { execFileSync, spawn } from 'child_process'
-import { createHash } from 'crypto'
+import { createHash, generateKeyPairSync } from 'crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { createServer } from 'net'
 import { tmpdir } from 'os'
@@ -89,6 +89,64 @@ const fakeRdp = createServer((s) => {
 })
 await new Promise((r) => fakeRdp.listen(0, '127.0.0.1', r))
 rdp('rdp-real', { port: fakeRdp.address().port })
+// What xrdp answers when it cannot read its private key: standard RDP security, no TLS. The proxy has
+// to do that part. The real IronRDP goes on if the Connect Response it was handed makes sense to it.
+const noTlsSeen = { connectInitial: undefined, afterResponse: [] }
+const rsa = generateKeyPairSync('rsa', { modulusLength: 1024 }).publicKey.export({ format: 'jwk' })
+function rsaCert() {
+  const n = Buffer.from(rsa.n, 'base64url')
+  const blob = Buffer.alloc(20 + n.length + 8)
+  blob.write('RSA1', 0, 'latin1')
+  blob.writeUInt32LE(n.length + 8, 4)
+  blob.writeUInt32LE(n.length * 8, 8)
+  blob.writeUInt32LE(n.length - 1, 12)
+  Buffer.from(rsa.e, 'base64url').reverse().copy(blob, 16)
+  Buffer.from(n).reverse().copy(blob, 20)
+  const head = Buffer.alloc(16)
+  head.writeUInt32LE(1, 0)
+  head.writeUInt32LE(1, 4)
+  head.writeUInt32LE(1, 8)
+  head.writeUInt16LE(6, 12)
+  head.writeUInt16LE(blob.length, 14)
+  return Buffer.concat([head, blob, Buffer.alloc(72)])
+}
+function connectResponse() {
+  const cert = rsaCert()
+  const random = Buffer.alloc(32, 0x42)
+  const sec = Buffer.alloc(20)
+  sec.writeUInt16LE(0x0c02, 0)
+  sec.writeUInt16LE(20 + 32 + cert.length, 2)
+  sec.writeUInt32LE(2, 4) // 128 bit
+  sec.writeUInt32LE(3, 8) // high
+  sec.writeUInt32LE(32, 12)
+  sec.writeUInt32LE(cert.length, 16)
+  const core = Buffer.from('010c0c0004000800' + '00000000', 'hex')
+  const net = Buffer.from('030c0800eb030000', 'hex')
+  const blocks = Buffer.concat([core, sec, random, cert, net])
+  const per = (v) => (v < 0x80 ? Buffer.from([v]) : Buffer.from([0x80 | (v >> 8), v & 0xff]))
+  const ber = (v) => Buffer.from([0x82, v >> 8, v & 0xff])
+  const inner = Buffer.concat([Buffer.from('14760a01010001c000', 'hex'), Buffer.from('McDn'), per(blocks.length), blocks])
+  const user = Buffer.concat([Buffer.from('000500147c0001', 'hex'), per(inner.length), inner])
+  const domain = Buffer.from('301a020122020103020100020101020100020101020300fff8020102', 'hex')
+  const fields = Buffer.concat([Buffer.from('0a0100020100', 'hex'), domain, Buffer.from([4]), ber(user.length), user])
+  const body = Buffer.concat([Buffer.from('02f0807f66', 'hex'), ber(fields.length), fields])
+  const tpkt = Buffer.from([3, 0, (body.length + 4) >> 8, (body.length + 4) & 0xff])
+  return Buffer.concat([tpkt, body])
+}
+const noTlsRdp = createServer((s) => {
+  s.on('error', () => {})
+  let step = 0
+  s.on('data', (d) => {
+    if (step === 0) s.write(Buffer.from('030000130ed000001234000201080000000000', 'hex'))
+    else if (step === 1) {
+      noTlsSeen.connectInitial = d
+      s.write(connectResponse())
+    } else noTlsSeen.afterResponse.push(d)
+    step++
+  })
+})
+await new Promise((r) => noTlsRdp.listen(0, '127.0.0.1', r))
+rdp('rdp-no-tls', { username: 'alice', port: noTlsRdp.address().port }, 'good')
 
 json('sessions.json', sessions)
 json('secrets.json', secrets)
@@ -421,6 +479,36 @@ try {
     })
   })
 
+  console.log('--- RDP (real IronRDP, server without TLS)')
+  await withApp(async (app, win) => {
+    const { open } = helpers(app, win)
+    win.on('console', (m) => process.env.RDP_DEBUG && console.log('[page]', m.text().slice(0, 400)))
+    await open('rdp-no-tls')
+    for (let i = 0; i < 100 && !noTlsSeen.afterResponse.length; i++) {
+      await win.waitForTimeout(100)
+      const trust = win.locator('.modal-footer button.primary')
+      if (await trust.count()) await trust.first().click()
+    }
+    const hello = noTlsSeen.connectInitial
+    check('server without TLS: IronRDP gets as far as sending its client data', !!hello && hello.includes('Duca'))
+    if (hello) {
+      const blocks = hello.indexOf('Duca') + 4 + (hello[hello.indexOf('Duca') + 4] & 0x80 ? 2 : 1)
+      let selected, methods
+      for (let at = blocks; at + 4 <= hello.length; ) {
+        const length = hello.readUInt16LE(at + 2)
+        if (length < 4) break
+        if (hello.readUInt16LE(at) === 0xc001 && length >= 216) selected = hello.readUInt32LE(at + 212)
+        if (hello.readUInt16LE(at) === 0xc002) methods = hello.readUInt32LE(at + 4)
+        at += length
+      }
+      check('…the server is told standard security', selected === 0, `selected=${selected}`)
+      check('…and which ciphers the client takes', (methods & 2) === 2, `methods=${methods}`)
+    }
+    const overlay = await win.locator('.rdp-overlay.error').first().innerText().catch(() => '')
+    check('…IronRDP accepts the rewritten Connect Response and goes on with MCS', noTlsSeen.afterResponse.length > 0, overlay.replace(/\n/g, ' | '))
+    check('…no password dialog', (await win.locator('.login-dialog, .modal input[type=password]').count()) === 0)
+  })
+
   console.log('--- RDP (real IronRDP, as far as the TCP connection)')
   await withApp(async (app, win) => {
     const { open, dialog, answer } = helpers(app, win)
@@ -439,6 +527,7 @@ try {
 } finally {
   sshd.kill()
   fakeRdp.close()
+  noTlsRdp.close()
   rmSync(userData, { recursive: true, force: true })
 }
 console.log(failed ? `\n${failed} FAILED` : '\nAll login checks passed')

@@ -235,11 +235,14 @@ const lineCount = (text: string): number => text.split('\n').filter((l) => l.tri
 export function PasteDialog(): JSX.Element | null {
   const review = useStore((s) => s.pasteReview)
   const [text, setText] = useState('')
-  const box = useRef<HTMLTextAreaElement>(null)
+  const [editing, setEditing] = useState(false)
+  const pasteButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!review) return
     setText(review.text.replace(/\r\n?/g, '\n'))
-    setTimeout(() => box.current?.focus(), 0)
+    setEditing(false)
+    // On the button, so Enter pastes straight away. ↑ goes to the text to change it.
+    setTimeout(() => pasteButton.current?.focus(), 0)
   }, [review])
   if (!review) return null
   const finish = (value: string | null): void => {
@@ -255,9 +258,9 @@ export function PasteDialog(): JSX.Element | null {
       onClose={() => finish(null)}
       footer={
         <>
-          <span className="muted small paste-keys">{isMac ? '⌘↩' : 'Ctrl+Enter'} to paste, Esc to cancel</span>
+          <span className="muted small paste-keys">{editing ? (isMac ? '⌘↩' : 'Ctrl+Enter') : 'Enter'} to paste, {editing ? '' : '↑ to edit, '}Esc to cancel</span>
           <button onClick={() => finish(null)}>Cancel</button>
-          <button className="primary" disabled={!text} onClick={() => finish(text)}>
+          <button ref={pasteButton} className="primary" disabled={!text} onClick={() => finish(text)}>
             Paste
           </button>
         </>
@@ -267,13 +270,14 @@ export function PasteDialog(): JSX.Element | null {
         Into {review.target}. {review.asBlock ? 'Nothing runs until you press Enter in the terminal.' : 'This shell runs each line as it arrives.'}
       </p>
       <textarea
-        ref={box}
         className="paste-text mono"
         name="pasteText"
         wrap="off"
         spellCheck={false}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onFocus={() => setEditing(true)}
+        onBlur={() => setEditing(false)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (isMac ? e.metaKey : e.ctrlKey) && text) {
             e.preventDefault()

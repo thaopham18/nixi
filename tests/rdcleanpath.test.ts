@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RDCLEANPATH_VERSION, decodePdu, encodePdu, isNegotiationFailure, tpktLength } from '../src/main/rdp/rdcleanpath'
+import { RDCLEANPATH_VERSION, decodePdu, encodePdu, isNegotiationFailure, isStandardRdpSecurity, tpktLength } from '../src/main/rdp/rdcleanpath'
 
 describe('RDCleanPath PDU', () => {
   it('round-trips a request', () => {
@@ -30,5 +30,15 @@ describe('RDCleanPath PDU', () => {
     expect(tpktLength(fail)).toBe(19)
     expect(tpktLength(fail.subarray(0, 10))).toBeNull()
     expect(isNegotiationFailure(fail)).toBe(true)
+    expect(isStandardRdpSecurity(fail)).toBe(false)
+  })
+
+  it('tells when the server offers no TLS', () => {
+    const response = (protocol: string): Buffer => Buffer.from('03000013' + '0ed00000123400' + '02010800' + protocol, 'hex')
+    expect(isStandardRdpSecurity(response('00000000'))).toBe(true) // what xrdp sends without a usable key
+    expect(isStandardRdpSecurity(response('01000000'))).toBe(false) // TLS
+    expect(isStandardRdpSecurity(response('02000000'))).toBe(false) // CredSSP
+    expect(isStandardRdpSecurity(response('08000000'))).toBe(false) // CredSSP + early user auth
+    expect(isStandardRdpSecurity(Buffer.from('0300000b' + '06d00000123400', 'hex'))).toBe(true) // no negotiation data
   })
 })

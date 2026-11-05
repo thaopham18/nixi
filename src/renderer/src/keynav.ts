@@ -5,7 +5,7 @@ import { nextControl, type Arrow, type Box } from '@shared/nav'
 import { activePane } from './store'
 import { focusTerminal } from './terminals'
 
-const CONTROL = 'button:not(:disabled), a[href], input:not(:disabled), [data-nav]'
+const CONTROL = 'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), [data-nav]'
 /** Top-level areas: arrows stay inside the one they are in. */
 const AREA = '.modal, .toolbar, .sidebar, .tabbar, .pane, .welcome'
 /** Where the focus goes in turn with View → Next Area. */
@@ -51,7 +51,8 @@ function onArrow(e: KeyboardEvent, key: Arrow): void {
   const active = document.activeElement as HTMLElement | null
   const onBody = !active || active === document.body
   if (!onBody) {
-    if (!active.matches(CONTROL)) return // a list box, a text area, the terminal, a remote screen
+    // A text area can be landed on, but inside it the arrows move the caret; Tab leaves it.
+    if (!active.matches(CONTROL) || active instanceof HTMLTextAreaElement) return // also a list box, the terminal, a remote screen
     if (active.closest('.xterm, .ai-picker-menu')) return
     if (active instanceof HTMLInputElement) {
       if (OWN_ARROWS.has(active.type)) return

@@ -191,6 +191,23 @@ export function tpktLength(buf: Buffer): number | null {
   return buf.length >= len ? len : null
 }
 
+/**
+ * The server chose standard RDP security (no TLS): RDP_NEG_RSP with protocol 0, or an old server
+ * that sends no negotiation data at all. xrdp does this when it cannot read its private key.
+ */
+export function isStandardRdpSecurity(x224: Buffer): boolean {
+  if (x224.length < 12) return true
+  return x224[11] === 0x02 && x224.length >= 19 && x224.readUInt32LE(15) === 0
+}
+
+/** The same X.224 confirm saying TLS was chosen, with an RDP_NEG_RSP even if the server sent none. */
+export function asTlsResponse(x224: Buffer): Buffer {
+  const head = Buffer.from(x224.subarray(0, 11))
+  head.writeUInt16BE(19, 2)
+  head[4] = 14
+  return Buffer.concat([head, Buffer.from([0x02, 0x00, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00])])
+}
+
 /** RDP_NEG_FAILURE (type 0x03) in an X.224 Connection Confirm. */
 export function isNegotiationFailure(x224: Buffer): boolean {
   // TPKT(4) + X.224 CC header(7) then RDP_NEG_* structure

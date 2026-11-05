@@ -10,8 +10,12 @@ import {
   decodePdu,
   encodePdu,
   isNegotiationFailure,
+  asTlsResponse,
+  isStandardRdpSecurity,
   tpktLength
 } from './rdcleanpath'
+import { PLACEHOLDER_CERT, Framer, StandardSecurity } from './standard-security'
+import { fixFastPathBitmaps, fixSlowPathBitmaps } from './bitmap'
 
 /**
  * Local RDCleanPath gateway for the IronRDP WASM client running in the renderer:
@@ -118,7 +122,7 @@ async function negotiate(
   ticket: Ticket,
   x224Request: Buffer,
   rsaKeyExchange: boolean
-): Promise<{ failure: Buffer } | { secure: TLSSocket; tcp: Socket; x224Response: Buffer }> {
+): Promise<{ failure: Buffer } | { plain: Socket; x224Response: Buffer } | { secure: TLSSocket; tcp: Socket; x224Response: Buffer }> {
   const tcp = await new Promise<Socket>((resolve, reject) => {
     const s = netConnect(ticket.port, ticket.host)
     s.setNoDelay(true)
@@ -132,6 +136,9 @@ async function negotiate(
   if (isNegotiationFailure(x224Response)) {
     tcp.destroy()
     return { failure: x224Response }
+  }
+  if (isStandardRdpSecurity(x224Response)) {
+    return { plain: tcp, x224Response }
   }
   const secure = tlsConnect({
     socket: tcp,
@@ -152,9 +159,32 @@ async function negotiate(
   return { secure, tcp, x224Response }
 }
 
+/** What the server sends goes through here on its way to IronRDP. If it can't be followed, it just passes. */
+function bitmapFixer(send: (d: Buffer) => void): (d: Buffer) => void {
+  const framer = new Framer()
+  let broken = false
+  return (data) => {
+    if (broken) return send(data)
+    try {
+      for (const pdu of framer.push(data)) {
+        let fixed: Buffer[] | undefined
+        try {
+          fixed = pdu[0] === 3 ? fixSlowPathBitmaps(pdu) : [fixFastPathBitmaps(pdu)].flatMap((p) => (p ? [p] : []))
+        } catch (err) {
+          parent.postMessage({ type: 'log', message: `[rdp-proxy] bitmap left as it was: ${(err as Error).message}` })
+        }
+        if (fixed?.length) fixed.forEach(send)
+        else send(pdu)
+      }
+    } catch {
+      broken = true // not RDP framing after all
+    }
+  }
+}
+
 function handle(ws: WebSocket): void {
   let pending = Buffer.alloc(0)
-  let tls: TLSSocket | undefined
+  let tls: { write(data: Buffer): unknown; destroy(): unknown } | undefined
   let started = false
   const queued: Buffer[] = []
 
@@ -176,6 +206,35 @@ function handle(ws: WebSocket): void {
   ws.on('close', () => tls?.destroy())
   ws.on('error', () => tls?.destroy())
 
+  /** A server without TLS: tell IronRDP it has TLS, and do the old security here. */
+  function standardSecurity(tcp: Socket, x224Response: Buffer, ticket: Ticket): void {
+    parent.postMessage({ type: 'log', message: '[rdp-proxy] server has no TLS, using standard RDP security' })
+    const close = (reason: string): void => {
+      parent.postMessage({ type: 'log', message: `[rdp-proxy] ${reason}` })
+      tcp.destroy()
+      ws.close()
+    }
+    const security = new StandardSecurity({
+      toServer: (d) => void tcp.write(d),
+      toClient: bitmapFixer((d) => ws.readyState === ws.OPEN && ws.send(d)),
+      verify: (cert) => verifyCert(ticket.host, ticket.port, cert),
+      fail: close
+    })
+    ws.send(
+      encodePdu({
+        version: RDCLEANPATH_VERSION,
+        x224: asTlsResponse(x224Response),
+        serverCertChain: [PLACEHOLDER_CERT],
+        serverAddr: `${tcp.remoteAddress}:${tcp.remotePort}`
+      })
+    )
+    tcp.on('data', (d: Buffer) => security.fromServer(d))
+    tcp.on('close', () => ws.close())
+    tcp.on('error', () => ws.close())
+    tls = { write: (d) => security.fromClient(d), destroy: () => tcp.destroy() }
+    for (const q of queued.splice(0)) security.fromClient(q)
+  }
+
   async function start(token: string | undefined, x224Request: Buffer | undefined): Promise<void> {
     const ticket = token ? tickets.get(token) : undefined
     if (token) tickets.delete(token)
@@ -195,6 +254,7 @@ function handle(ws: WebSocket): void {
       if ('failure' in conn) {
         return sendError(ws, NEGOTIATION_ERROR, conn.failure, 'server refused the requested security protocol')
       }
+      if ('plain' in conn) return standardSecurity(conn.plain, conn.x224Response, ticket as Ticket)
       const { secure, tcp, x224Response } = conn
       const chain = certChain(secure)
       // RDP servers mostly use self-signed certs: trust on first use, warn when it changes.
@@ -213,7 +273,8 @@ function handle(ws: WebSocket): void {
       )
       tls = secure
       for (const q of queued.splice(0)) secure.write(q)
-      secure.on('data', (d: Buffer) => ws.readyState === ws.OPEN && ws.send(d))
+      const toClient = bitmapFixer((d) => ws.readyState === ws.OPEN && ws.send(d))
+      secure.on('data', toClient)
       secure.on('close', () => ws.close())
       secure.on('error', () => ws.close())
     } catch (err) {
