@@ -289,6 +289,8 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
   const [tab, setTab] = useState<AiProviderId>(current.id)
   const [view, setView] = useState<{ ready: boolean; models: AiModelInfo[]; note?: string } | undefined>()
   const box = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const menuBox = useRef<HTMLDivElement>(null)
   const baseUrl = settings?.aiBaseUrl ?? ''
 
   useEffect(() => {
@@ -310,7 +312,9 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
       if (!box.current?.contains(e.target as Node)) setOpen(false)
     }
     const esc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      trigger.current?.focus()
     }
     window.addEventListener('mousedown', away)
     window.addEventListener('keydown', esc)
@@ -321,7 +325,28 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
     }
   }, [open, tab, baseUrl])
 
+  // The keyboard starts on the model in use. It stays put once inside, unless the list it was on
+  // just went away with a change of provider.
+  useEffect(() => {
+    const menu = menuBox.current
+    if (!open || !view || !menu || menu.contains(document.activeElement)) return
+    ;(menu.querySelector<HTMLElement>('.ai-picker-models button.active') ?? menu.querySelector<HTMLElement>('.ai-picker-models button') ?? menu.querySelector<HTMLElement>('.type-picker button.active'))?.focus()
+  }, [open, view])
+
   if (!settings) return null
+
+  const onMenuKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      const at = AI_PROVIDERS.findIndex((p) => p.id === tab)
+      setTab(AI_PROVIDERS[(at + (e.key === 'ArrowLeft' ? -1 : 1) + AI_PROVIDERS.length) % AI_PROVIDERS.length].id)
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const all = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      const at = all.indexOf(document.activeElement as HTMLButtonElement)
+      all[(at + (e.key === 'ArrowUp' ? -1 : 1) + all.length) % all.length]?.focus()
+    }
+  }
 
   /** False when the user would rather keep the chat. */
   const choose = async (provider: AiProviderId, id?: string): Promise<boolean> => {
@@ -342,6 +367,7 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
     useStore.setState({ settings: next })
     if (moved) clearChat(chatId)
     setOpen(false)
+    trigger.current?.focus()
     return true
   }
 
@@ -350,6 +376,7 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
   return (
     <div className="ai-picker" ref={box}>
       <button
+        ref={trigger}
         className="ai-model"
         title={`${current.label} · ${model || 'no model chosen'}`}
         aria-expanded={open}
@@ -366,7 +393,7 @@ function AiPicker({ chatId, busy, tokens }: { chatId: string; busy: boolean; tok
       </button>
       {tokens > 0 && <span className="ai-tokens">{tokens.toLocaleString('en-US')} tokens</span>}
       {open && (
-        <div className="ai-picker-menu">
+        <div className="ai-picker-menu" ref={menuBox} onKeyDown={onMenuKey}>
           <div className="type-picker" role="radiogroup" aria-label="AI provider">
             {AI_PROVIDERS.map((p) => (
               <button key={p.id} role="radio" aria-checked={p.id === tab} className={p.id === tab ? 'active' : ''} onClick={() => setTab(p.id)}>
@@ -423,6 +450,18 @@ export function AiPanel(): JSX.Element {
   const model = aiModelOf(aiSettings)
   const [hasKey, setHasKey] = useState<boolean | undefined>()
   const list = useRef<HTMLDivElement>(null)
+  // As in the terminal: what the mouse selects in the chat goes to the clipboard.
+  useEffect(() => {
+    const onUp = (): void => {
+      if (useStore.getState().settings?.copyOnSelect === false) return
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed || !list.current?.contains(selection.anchorNode)) return
+      const text = selection.toString()
+      if (text) void api.writeClipboard(text)
+    }
+    document.addEventListener('mouseup', onUp)
+    return () => document.removeEventListener('mouseup', onUp)
+  }, [])
 
   // The key is set in Settings, so look again when a dialog closes.
   useEffect(() => void api.aiIsReady().then(setHasKey), [modal, provider.id, aiSettings?.aiBaseUrl])

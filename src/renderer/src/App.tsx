@@ -3,7 +3,7 @@ import type { DbStatusInfo } from '../../preload'
 import { LockScreen } from './components/LockScreen'
 import { hotkeyOf } from '@shared/macro'
 import { api, isMac } from './api'
-import { activePane, useStore } from './store'
+import { activePane, askChoice, useStore } from './store'
 import { applySettings, focusedField, runMacro, typeIntoField } from './terminals'
 import { handleMenu, openLocal, openMacroPicker } from './actions'
 import { Sidebar } from './components/Sidebar'
@@ -18,7 +18,8 @@ import { CredentialManager } from './components/CredentialManager'
 import { AboutLine } from './components/AboutLine'
 import { MacroPicker } from './components/MacroPicker'
 import { HeartIcon } from './components/Icons'
-import { ChoiceDialog, ContextMenu, PromptDialog, ReportDialog, Toast } from './components/Overlays'
+import { installKeyNav } from './keynav'
+import { ChoiceDialog, ContextMenu, PasteDialog, PromptDialog, ReportDialog, Toast } from './components/Overlays'
 import { foldedExceptFirst } from '@shared/parse'
 
 export function App(): JSX.Element {
@@ -54,6 +55,7 @@ export function App(): JSX.Element {
     )
     const offs = [
       api.onMenu(handleMenu),
+      api.onQuestion(askChoice),
       api.onTunnelStatus((st) => useStore.setState((s) => ({ tunnelStatus: { ...s.tunnelStatus, [st.id]: st } }))),
       api.onTransfer((t) => useStore.setState((s) => ({ transfers: { ...s.transfers, [t.id]: t } })))
     ]
@@ -69,6 +71,8 @@ export function App(): JSX.Element {
       else document.documentElement.style.removeProperty('--term-bg')
     }
   }, [settings])
+
+  useEffect(installKeyNav, [])
 
   // Macro hotkeys, checked before xterm sees the key.
   useEffect(() => {
@@ -138,6 +142,7 @@ export function App(): JSX.Element {
       {modal === 'macros' && <MacroManager />}
       {modal === 'credentials' && <CredentialManager />}
       <PromptDialog />
+      <PasteDialog />
       <ChoiceDialog />
       <ReportDialog />
       <ContextMenu />

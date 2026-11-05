@@ -3,7 +3,7 @@ import type { Macro } from '@shared/types'
 import { asTextMacro, parseMacro, serializeMacro, textMacroSteps } from '@shared/macro'
 import { HotkeyInput } from './HotkeyInput'
 import { api, errorMessage, uid } from '../api'
-import { activePane, toast, useStore } from '../store'
+import { activePane, toast, useStore, confirmDelete } from '../store'
 import { runMacro } from '../terminals'
 import { toggleRecording } from '../actions'
 import { Modal } from './Overlays'
@@ -85,6 +85,8 @@ export function MacroManager(): JSX.Element {
               className={`tree-row macro-row ${m.id === selectedId ? 'selected' : ''} ${drag?.id === m.id ? 'dragging' : ''} ${
                 drag && drag.to === i ? 'drop-before' : ''
               } ${drag && drag.to === i + 1 && i === macros.length - 1 ? 'drop-after' : ''}`}
+              data-nav
+              tabIndex={0}
               draggable
               onClick={() => select(m)}
               onDragStart={(e) => {
@@ -220,8 +222,8 @@ export function MacroManager(): JSX.Element {
             {selected && (
               <button
                 className="danger"
-                onClick={() => {
-                  if (!window.confirm(`Delete macro "${selected.name}"?`)) return
+                onClick={async () => {
+                  if (!(await confirmDelete('Delete macro', `Delete macro "${selected.name}"?`))) return
                   void persist(macros.filter((m) => m.id !== selected.id))
                   select(undefined)
                 }}

@@ -191,15 +191,12 @@ try {
   await closeTab()
 
   // Unknown certificate: the user's answer decides.
-  await app.evaluate(({ dialog }) => {
-    dialog.showMessageBox = async () => {
-      globalThis.__askedCert = (globalThis.__askedCert ?? 0) + 1
-      return { response: 0 }
-    }
-  })
   await open(untrusted.name)
+  const asked = win.locator('.modal', { hasText: "can't be established" })
+  await asked.waitFor()
+  check('unknown certificate: asks in the app dialog', /Trust & connect/.test(await asked.innerText()))
+  await asked.locator('button', { hasText: 'Cancel' }).click()
   check('refused certificate: does not connect', /not trusted/.test(await overlay()))
-  check('…after asking the user', (await app.evaluate(() => globalThis.__askedCert)) === 1)
   await closeTab()
 
   // Clipboard both ways.

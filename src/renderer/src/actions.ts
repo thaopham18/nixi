@@ -1,6 +1,7 @@
 import type { Session } from '@shared/types'
 import { api, errorMessage } from './api'
-import { activePane, promptText, toast, useStore, type Layout, type Pane } from './store'
+import { activePane, promptText, toast, useStore, type Layout, type Pane, confirmAction } from './store'
+import { nextArea } from './keynav'
 import { copySelection, cursorPoint, disposeTerminal, focusedField, getEntry, pasteInto, connectPane, startRecording, stopRecording } from './terminals'
 import { disposeRdp, reconnectRdp } from './rdp'
 import { disposeVnc, reconnectVnc } from './vnc'
@@ -174,7 +175,7 @@ export async function importFromMobaXterm(): Promise<void> {
       preview.other ? `${preview.other} other sessions (not supported, skipped)` : '',
       preview.macros ? `${preview.macros} macros` : ''
     ].filter(Boolean)
-    if (!window.confirm(`Import from ${preview.file}?\n\n${summary.join('\n')}\n\nSessions go to the "MobaXterm" folder. Passwords are not imported.`)) return
+    if (!(await confirmAction('Import from MobaXterm', `Import from ${preview.file}?\n\n${summary.join('\n')}\n\nSessions go to the "MobaXterm" folder. Passwords are not imported.`, 'Import'))) return
     let master: string | undefined
     if (preview.encryptedMacros) {
       const pw = await promptText({
@@ -313,6 +314,8 @@ export function handleMenu(cmd: string): void {
       return s.set({ modal: 'macros' })
     case 'macroPicker':
       return openMacroPicker()
+    case 'nextArea':
+      return nextArea()
     case 'copy':
       if (pane) copySelection(pane.id)
       return

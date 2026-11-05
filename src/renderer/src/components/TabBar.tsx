@@ -110,6 +110,8 @@ export function TabBar(): JSX.Element {
             key={t.id}
             className={`tab ${t.id === activeTabId ? 'active' : ''} ${t.pinned ? 'pinned' : ''} ${activity[t.id] && t.id !== activeTabId ? 'activity' : ''}`}
             style={t.color ? ({ '--tab-color': t.color } as React.CSSProperties) : undefined}
+            data-nav
+            tabIndex={t.id === activeTabId ? 0 : -1}
             draggable
             onDragStart={(e) => {
               setDragId(t.id)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Credential, CredentialInput } from '@shared/types'
 import { api, errorMessage, uid } from '../api'
-import { toast, useStore } from '../store'
+import { toast, useStore, confirmDelete } from '../store'
 import { Modal } from './Overlays'
 import { ToolIcon } from './Icons'
 
@@ -43,7 +43,7 @@ export function CredentialManager(): JSX.Element {
 
   const remove = async (): Promise<void> => {
     const note = users.length ? ` ${users.length} session(s) using it keep this login as their own.` : ''
-    if (!window.confirm(`Delete credential "${form.name}"?${note}`)) return
+    if (!(await confirmDelete('Delete credential', `Delete credential "${form.name}"?${note}`))) return
     try {
       const res = await api.deleteCredential(form.id)
       useStore.setState(res)
@@ -59,7 +59,7 @@ export function CredentialManager(): JSX.Element {
       <div className="macro-layout">
         <div className="macro-list">
           {credentials.map((c) => (
-            <div key={c.id} className={`tree-row macro-row ${c.id === form.id ? 'selected' : ''}`} onClick={() => select(c)}>
+            <div key={c.id} data-nav tabIndex={0} className={`tree-row macro-row ${c.id === form.id ? 'selected' : ''}`} onClick={() => select(c)}>
               <span className="tree-name">{c.name}</span>
               {c.kind === 'key' && <span className="badge">key</span>}
             </div>

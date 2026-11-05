@@ -24,7 +24,10 @@ import {
   sessionSecret,
   setSettings,
   shortcutsChanged,
-  tunnelStore
+  tunnelStore,
+  clearCommandHistory,
+  commandHistory,
+  rememberCommand
 } from './store/stores'
 import * as db from './store/database'
 import { findLegacyData } from './store/legacy'
@@ -141,6 +144,9 @@ export function registerIpc(): void {
   handle('credentials:save', (_e, c: CredentialInput) => ({ credentials: saveCredential(c), sessions: listSessions() }))
   handle('credentials:delete', (_e, id: string) => ({ credentials: deleteCredential(id), sessions: listSessions() }))
   handle('credentials:secret', (_e, id: string) => credentialSecret(id))
+  handle('history:list', () => commandHistory())
+  handle('history:remember', (_e, key: string, command: string) => rememberCommand(key, command))
+  handle('history:clear', () => clearCommandHistory())
   handle('sessions:importSshConfig', () => {
     const file = join(homedir(), '.ssh', 'config')
     if (!existsSync(file)) return { added: 0, sessions: listSessions() }

@@ -16,8 +16,7 @@ import type {
   Settings,
   Transfer,
   Tunnel,
-  TunnelStatus
-} from '@shared/types'
+  TunnelStatus, ChoiceQuestion } from '@shared/types'
 import type { MobaPreview, MobaReport } from '../main/import/mobaxterm'
 import type { ServerStats } from '@shared/stats'
 
@@ -82,6 +81,9 @@ const api = {
   saveCredential: (c: CredentialInput): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:save', c),
   deleteCredential: (id: string): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:delete', id),
   credentialSecret: (id: string): Promise<string | undefined> => invoke('credentials:secret', id),
+  commandHistory: (): Promise<Record<string, string[]>> => invoke('history:list'),
+  rememberCommand: (key: string, command: string): Promise<void> => invoke('history:remember', key, command),
+  clearCommandHistory: (): Promise<void> => invoke('history:clear'),
   importSshConfig: (): Promise<{ added: number; sessions: Session[] }> => invoke('sessions:importSshConfig'),
   importSessions: (): Promise<Session[]> => invoke('sessions:import'),
   exportSessions: (): Promise<boolean> => invoke('sessions:export'),
@@ -162,6 +164,14 @@ const api = {
   pickFile: (): Promise<string | undefined> => invoke('dialog:pickFile'),
   pickDir: (): Promise<string | undefined> => invoke('dialog:pickDir'),
 
+  /** Questions from the main process; each gets its answer back. */
+  onQuestion: (cb: (question: ChoiceQuestion) => Promise<string | null>) => {
+    const off = on('ask:question', (id: number, question: ChoiceQuestion) => {
+      void cb(question).then((value) => ipcRenderer.send('ask:answer', id, value))
+    })
+    ipcRenderer.send('ask:ready')
+    return off
+  },
   onMenu: (cb: (cmd: string) => void) => on('menu:cmd', cb),
   onFullScreen: (cb: (on: boolean) => void) => on('window:fullscreen', cb)
 }

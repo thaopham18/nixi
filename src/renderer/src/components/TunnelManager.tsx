@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import type { Session, Tunnel, TunnelServer, TunnelStatus, TunnelType } from '@shared/types'
 import { formatSshAddress, parseSshAddress } from '@shared/parse'
 import { api, isMac, uid } from '../api'
-import { toast, useStore } from '../store'
+import { toast, useStore, confirmDelete } from '../store'
 import { Modal } from './Overlays'
 import { ToolIcon } from './Icons'
 
@@ -424,7 +424,9 @@ export function TunnelManager(): JSX.Element {
                   <button
                     className="danger square"
                     title="Delete"
-                    onClick={() => window.confirm(`Delete tunnel "${t.name}"?`) && void persist(tunnels.filter((x) => x.id !== t.id))}
+                    onClick={async () => {
+                      if (await confirmDelete('Delete tunnel', `Delete tunnel "${t.name}"?`)) void persist(tunnels.filter((x) => x.id !== t.id))
+                    }}
                   >
                     <ToolIcon name="trash" />
                   </button>

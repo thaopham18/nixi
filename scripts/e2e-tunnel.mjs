@@ -305,9 +305,9 @@ try {
   await win.screenshot({ path: join(tmpdir(), `${shot}-list.png`) })
 
   // Deleting a tunnel takes its password along.
-  win.on('dialog', (d) => d.accept())
   const id = moved.id
   await card('typed').locator('button.square').click()
+  await win.locator('.modal-footer button', { hasText: 'Delete' }).click()
   await sleep(200)
   await win.evaluate(async (t) => { await window.api.saveTunnels([...(await window.api.listTunnels()).tunnels, t]) }, { ...moved, id, name: 'again', hasSecret: undefined })
   const again = (await win.evaluate(() => window.api.listTunnels())).tunnels.find((t) => t.name === 'again')

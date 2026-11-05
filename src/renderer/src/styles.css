@@ -921,6 +921,43 @@ body.resizing .vnc-display {
 .modal-footer button {
   min-width: var(--ctl-w);
 }
+/* With the keyboard, what has the focus is always plain to see. */
+button:focus-visible,
+a:focus-visible,
+input[type='checkbox']:focus-visible,
+[data-nav]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+tr[data-nav]:focus-visible {
+  outline-offset: -2px;
+}
+.paste-text {
+  display: block;
+  width: 100%;
+  height: min(46vh, 420px);
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+  line-height: 1.45;
+}
+.paste-keys {
+  margin-right: auto;
+}
+/* :focus, not :focus-visible: a dialog opened by a click must still show what Enter will press. */
+.modal-footer button:focus,
+.ai-picker-menu button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.term-suggestion {
+  position: absolute;
+  z-index: 5;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.4;
+}
 .row.end button,
 .tunnel-card-head button:not(.square) {
   min-width: var(--ctl-w-sm);
@@ -1080,6 +1117,7 @@ body.resizing .vnc-display {
 .choice-message {
   margin: 0 0 8px;
   line-height: 1.5;
+  white-space: pre-line;
 }
 .choice-items {
   overflow-wrap: anywhere;
@@ -1488,14 +1526,16 @@ summary {
   border-radius: var(--radius-xs);
   cursor: default;
 }
-.context-menu .item:hover {
+.context-menu .item:hover,
+.context-menu .item.active {
   background: var(--accent);
   color: var(--accent-fg);
 }
 .context-menu .item.danger {
   color: var(--danger);
 }
-.context-menu .item.danger:hover {
+.context-menu .item.danger:hover,
+.context-menu .item.danger.active {
   color: #fff;
   background: var(--danger);
 }

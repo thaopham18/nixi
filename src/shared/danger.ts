@@ -164,6 +164,11 @@ export class InputLine {
     this.text = ''
   }
 
+  /** What was typed so far, as far as it can be known. */
+  get value(): string {
+    return this.text
+  }
+
   /** Typed but not sent yet. */
   get pending(): boolean {
     return this.text.length > 0

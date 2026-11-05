@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
-import { BrowserWindow, dialog } from 'electron'
+import { BrowserWindow } from 'electron'
+import { askUser } from '../ask'
 import { knownHostsStore } from './stores'
 
 export function fingerprint(key: Buffer): string {
@@ -20,19 +21,18 @@ export async function verifyHostKey(host: string, port: number, key: Buffer, kin
 
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   const changed = Boolean(known)
-  const opts = {
-    type: changed ? ('warning' as const) : ('question' as const),
+  const answer = await askUser(win, {
     title: changed ? `${what.toUpperCase()} CHANGED` : 'Unknown host',
     message: changed
       ? `WARNING: the ${what} for ${addr} has changed!\nThis could be a man-in-the-middle attack.`
-      : `The authenticity of ${kind === 'ssh' ? 'host' : `${kind.toUpperCase()} server`} ${addr} can't be established.`,
-    detail: `${changed ? `Old: ${known}\nNew: ` : 'Fingerprint: '}${fp}\n\nTrust this host and continue?`,
-    buttons: ['Cancel', changed ? 'Replace key & connect' : 'Trust & connect'],
-    defaultId: changed ? 0 : 1,
-    cancelId: 0
-  }
-  const res = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
-  if (res.response !== 1) return false
+      : `The authenticity of ${kind === 'ssh' ? 'host' : `${kind.toUpperCase()} server`} ${addr} can't be established. Trust this host and continue?`,
+    items: changed ? [`Old: ${known}`, `New: ${fp}`] : [`Fingerprint: ${fp}`],
+    buttons: [
+      { label: 'Cancel', value: 'no', primary: changed },
+      changed ? { label: 'Replace key & connect', value: 'yes', danger: true } : { label: 'Trust & connect', value: 'yes', primary: true }
+    ]
+  })
+  if (answer !== 'yes') return false
   knownHostsStore.set({ ...knownHostsStore.get(), [id]: fp })
   return true
 }

@@ -59,7 +59,18 @@ export interface PromptRequest {
   resolve: (v: string | null, checked: boolean, username?: string, credentialId?: string) => void
 }
 
+export interface PasteReview {
+  text: string
+  /** where it goes */
+  target: string
+  /** the program takes a paste as one block, so its lines don't run by themselves */
+  asBlock: boolean
+  resolve: (text: string | null) => void
+}
+
 export interface ChoiceRequest {
+  /** a new one gets a fresh dialog, with the focus on its first button */
+  id?: number
   title: string
   message: string
   /** items listed under the message */
@@ -108,6 +119,7 @@ interface State {
   macroPicker?: { paneId?: string; field?: HTMLInputElement | HTMLTextAreaElement; x: number; y: number; lineHeight: number }
   prompt?: PromptRequest
   choice?: ChoiceRequest
+  pasteReview?: PasteReview
   toast?: { text: string; error?: boolean }
   report?: { title: string; lines: string[] }
   /** tab or session being dragged, so tab views can offer split drop zones */
@@ -387,10 +399,45 @@ export async function promptLogin(opts: {
   return { username: res.username, password: asksSecret ? res.value : undefined, remember: res.checked, credentialId: res.credentialId }
 }
 
-export function askChoice(opts: Omit<ChoiceRequest, 'resolve'>): Promise<string | null> {
-  // Only one fits on screen: whoever was waiting on an older one takes it as cancelled.
-  useStore.getState().choice?.resolve(null)
-  return new Promise((resolve) => useStore.setState({ choice: { ...opts, resolve } }))
+const waitingChoices: ChoiceRequest[] = []
+let choiceCount = 0
+
+/** One at a time: two servers can ask about their host keys at once, and neither may lose its answer. */
+export function askChoice(opts: Omit<ChoiceRequest, 'resolve' | 'id'>): Promise<string | null> {
+  return new Promise((resolve) => {
+    const request = { ...opts, resolve, id: ++choiceCount }
+    if (useStore.getState().choice) waitingChoices.push(request)
+    else useStore.setState({ choice: request })
+  })
+}
+
+export function answerChoice(value: string | null): void {
+  const { choice } = useStore.getState()
+  useStore.setState({ choice: waitingChoices.shift() })
+  choice?.resolve(value)
+}
+
+/** Yes or no about something hard to take back. The focus starts on Cancel unless `safe`. */
+export async function confirmAction(title: string, message: string, action: string, safe = true): Promise<boolean> {
+  const answer = await askChoice({
+    title,
+    message,
+    buttons: [
+      { label: 'Cancel', value: 'cancel', primary: !safe },
+      { label: action, value: 'yes', primary: safe, danger: !safe }
+    ]
+  })
+  return answer === 'yes'
+}
+
+export function confirmDelete(title: string, message: string): Promise<boolean> {
+  return confirmAction(title, message, 'Delete', false)
+}
+
+/** The text to paste after the user looked it over, or null if they called it off. */
+export function askPaste(opts: Omit<PasteReview, 'resolve'>): Promise<string | null> {
+  useStore.getState().pasteReview?.resolve(null)
+  return new Promise((resolve) => useStore.setState({ pasteReview: { ...opts, resolve } }))
 }
 
 export function showMenu(e: { clientX: number; clientY: number; preventDefault(): void }, items: MenuItem[]): void {

@@ -1,4 +1,4 @@
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type IMarker } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -12,9 +12,11 @@ import { commandOnScreen, findDanger, InputLine, macroLines } from '@shared/dang
 import { endsSession, isNetworkError, Retry, RETRY_LIMIT } from '@shared/reconnect'
 import { api, errorMessage, isMac } from './api'
 import { termTheme } from './themes'
-import { allPanes, askChoice, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
+import { allPanes, askChoice, askPaste, findPane, promptLogin, toast, useStore, type LoginAnswer, type Pane } from './store'
 import { forgetTypedPassword, keepLogin, typedLogin } from './login'
 import { englishKey } from '@shared/keyboard'
+import { commandFromLine, commandToKeep, longerCommand, suggestRest } from '@shared/history'
+import { keepCommand, loadCommandHistory, historyLists } from './history'
 
 interface Entry {
   term: Terminal
@@ -32,6 +34,14 @@ interface Entry {
   osc7At?: number
   promptTimer?: ReturnType<typeof setTimeout>
   lastOutputAt?: number
+  /** the grey command suggestion over the terminal */
+  ghost?: HTMLDivElement
+  /** something was pressed since the last Enter: there's a line being edited */
+  editing?: boolean
+  /** where the prompt ended when the first key of the line was pressed */
+  lineStart?: { marker: IMarker; x: number }
+  /** how much of `typed` came before the last Tab: only what's after it must show on screen */
+  typedBeforeTab?: number
 }
 
 /** A full-screen program that lost its connection can't switch these back itself. */
@@ -118,6 +128,7 @@ api.onStatus((s) => {
     if (!entry) return
     entry.term.write((entry.term.buffer.active.type === 'alternate' ? LEAVE_ALT_SCREEN : '') + RESET_MODES)
     entry.typed = new InputLine()
+    endLine(entry)
     entry.retry.down()
     const left = entry.leftAt !== undefined && Date.now() - entry.leftAt < 5000
     if (s.lost && !left && store.settings?.autoReconnect !== false && findPane(paneId)?.sessionId) {
@@ -251,12 +262,103 @@ function handleInput(paneId: string, data: string): void {
   const onScreen = screenCommand(entry.term)
   if (endsSession(lines[lines.length - 1] ?? '') || endsSession(onScreen)) entry.leftAt = Date.now()
   const hits = dangerIn([lines.join('\n'), onScreen])
-  if (!hits.length) return sendInput(paneId, data)
+  if (!hits.length) {
+    if (lines.length === 1 && useStore.getState().settings?.commandSuggestions !== false) {
+      const command = commandToKeep(onScreen, lines[0], fromLineStart(entry))
+      if (command) keepCommand(pane.sessionId, command)
+    }
+    return sendInput(paneId, data)
+  }
   askingDanger.add(paneId)
   void askDanger(paneId, hits).then((ok) => {
     askingDanger.delete(paneId)
-    if (ok) sendInput(paneId, data)
+    if (!ok) return
+    sendInput(paneId, data)
+    endLine(entry)
   })
+}
+
+function endLine(entry: Entry): void {
+  entry.lineStart?.marker.dispose()
+  entry.lineStart = undefined
+  entry.editing = false
+  entry.typedBeforeTab = 0
+}
+
+/** Keeps track of the line being edited: called with each key before it goes anywhere. */
+function noteKeys(entry: Entry): void {
+  if (entry.editing) return
+  entry.editing = true
+  const { term } = entry
+  const marker = term.buffer.active.type === 'normal' ? term.registerMarker(0) : undefined
+  if (marker) entry.lineStart = { marker, x: term.buffer.active.cursorX }
+}
+
+/** What is on the line between where the first key was pressed and the cursor. Knows no prompts, so ➜ is fine. */
+function fromLineStart(entry: Entry): string | undefined {
+  const mark = entry.lineStart
+  const buf = entry.term.buffer.active
+  if (!mark || mark.marker.isDisposed || mark.marker.line < 0) return undefined
+  const y = buf.baseY + buf.cursorY
+  if (mark.marker.line > y) return undefined
+  for (let r = y; r > mark.marker.line; r--) if (!buf.getLine(r)?.isWrapped) return undefined // it's no longer that line
+  let text = ''
+  for (let r = mark.marker.line; r <= y; r++) text += buf.getLine(r)?.translateToString(false, r === mark.marker.line ? mark.x : 0, r === y ? buf.cursorX : undefined) ?? ''
+  return text
+}
+
+/** The rest of the command history suggests for what is on the prompt, if the prompt is plain to see. */
+function suggestionFor(entry: Entry): string | undefined {
+  if (!entry.editing || useStore.getState().settings?.commandSuggestions === false) return undefined
+  const pane = findPane(entry.paneId)
+  const buf = entry.term.buffer.active
+  if (!pane?.connId || buf.type === 'alternate' || askingDanger.has(entry.paneId) || inputTargets(entry.paneId).length > 1) return undefined
+  const y = buf.baseY + buf.cursorY
+  const line = buf.getLine(y)
+  if (!line) return undefined
+  let first = y
+  while (first > 0 && buf.getLine(first)?.isWrapped) first--
+  let before = ''
+  for (let r = first; r <= y; r++) before += buf.getLine(r)?.translateToString(false, 0, r === y ? buf.cursorX : undefined) ?? ''
+  // Text after the cursor means the shell is editing or suggesting by itself.
+  if (line.translateToString(true, buf.cursorX) || asksForSecret(before)) return undefined
+  // What the screen says, not the keys: Tab and ↑ put text there that was never typed.
+  const typed = entry.typed.value
+  const command = longerCommand(commandFromLine(before), fromLineStart(entry)) ?? (before.endsWith(typed) ? typed : undefined)
+  if (!command) return undefined
+  // The echo of the last keys is still on its way: what's on screen is about to change.
+  if (!command.endsWith(typed.slice(entry.typedBeforeTab ?? 0))) return undefined
+  return suggestRest(command, ...historyLists(pane.sessionId))
+}
+
+function drawSuggestion(entry: Entry): void {
+  const rest = suggestionFor(entry)
+  const { term } = entry
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
+  const buf = term.buffer.active
+  const row = buf.baseY + buf.cursorY - buf.viewportY
+  if (!rest || !screen || !screen.offsetWidth || row < 0 || row >= term.rows) {
+    if (entry.ghost) entry.ghost.hidden = true
+    return
+  }
+  if (!entry.ghost) {
+    entry.ghost = document.createElement('div')
+    entry.ghost.className = 'term-suggestion'
+    entry.ghost.setAttribute('aria-hidden', 'true')
+  }
+  const ghost = entry.ghost
+  if (ghost.parentElement !== screen) screen.appendChild(ghost)
+  const cellW = screen.offsetWidth / term.cols
+  const cellH = screen.offsetHeight / term.rows
+  ghost.hidden = false
+  ghost.textContent = rest
+  ghost.style.left = `${buf.cursorX * cellW}px`
+  ghost.style.top = `${row * cellH}px`
+  ghost.style.width = `${(term.cols - buf.cursorX) * cellW}px`
+  ghost.style.height = ghost.style.lineHeight = `${cellH}px`
+  ghost.style.fontFamily = term.options.fontFamily ?? ''
+  ghost.style.fontSize = `${term.options.fontSize}px`
+  ghost.style.color = term.options.theme?.foreground ?? ''
 }
 
 export async function pasteInto(paneId: string, text?: string): Promise<void> {
@@ -265,9 +367,17 @@ export async function pasteInto(paneId: string, text?: string): Promise<void> {
   const clip = text ?? (await api.readClipboard())
   if (!clip) return
   const settings = useStore.getState().settings
-  const lines = clip.split(/\r?\n/).filter(Boolean).length
-  if (settings?.warnMultilinePaste && lines > 1 && !window.confirm(`Paste ${lines} lines into the terminal?`)) return
-  entry.term.paste(clip) // handles bracketed paste; goes through onData → handleInput
+  const lines = clip.split(/\r\n?|\n/).filter((l) => l.trim()).length
+  if (!settings?.warnMultilinePaste || lines < 2) return entry.term.paste(clip) // handles bracketed paste; goes through onData → handleInput
+  const targets = inputTargets(paneId)
+  const edited = await askPaste({
+    text: clip,
+    target: targets.length > 1 ? `${targets.length} terminals` : (findPane(paneId)?.title ?? 'the terminal'),
+    asBlock: entry.term.modes.bracketedPasteMode
+  })
+  if (!entries.has(paneId)) return
+  entry.term.focus()
+  if (edited) entry.term.paste(edited)
 }
 
 /** Screen position of the terminal cursor (bottom-left of its cell), for popups like the macro picker. */
@@ -406,6 +516,15 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
   term.attachCustomKeyEventHandler((e) => {
     if (isMac && e.metaKey) return false
     if (!isMac && e.ctrlKey && e.shiftKey && /^[A-Z]$/.test(e.key.toUpperCase()) && e.key.length === 1) return false
+    if (e.type === 'keydown' && (e.key === 'ArrowRight' || e.key === 'End') && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      const entry = entries.get(paneId)
+      const rest = entry && suggestionFor(entry)
+      if (rest) {
+        e.preventDefault()
+        term.input(rest, true)
+        return false
+      }
+    }
     if (!e.ctrlKey && !e.altKey && !e.metaKey && englishOnly(paneId)) {
       if (e.type === 'keypress') return false
       const typed = e.type === 'keydown' ? englishKey({ key: e.key, code: e.code, shiftKey: e.shiftKey, capsLock: e.getModifierState('CapsLock') }) : undefined
@@ -418,8 +537,31 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
     return true
   })
   if (term.textarea) watchKeyboard(paneId, term.textarea)
-  term.onData((d) => handleInput(paneId, d))
+  term.onData((d) => {
+    const entry = entries.get(paneId)
+    if (entry) noteKeys(entry)
+    handleInput(paneId, d)
+    if (!entry) return
+    if (d.includes('\t')) entry.typedBeforeTab = entry.typed.value.length
+    // The line is over; an Enter held back by the danger warning isn't, the text stays on the prompt.
+    // eslint-disable-next-line no-control-regex
+    if (/[\r\n\x03\x04\x0c]/.test(d) && !d.startsWith('\x1b[200~') && !askingDanger.has(paneId)) endLine(entry)
+    // Typing updates the suggestion when the echo comes; a line that's gone takes it away now.
+    if (!entry.editing) drawSuggestion(entry)
+  })
+  const redrawSuggestion = (): void => {
+    const entry = entries.get(paneId)
+    if (entry && (entry.editing || entry.ghost?.hidden === false)) drawSuggestion(entry)
+  }
+  term.onWriteParsed(redrawSuggestion)
+  term.onScroll(redrawSuggestion)
   term.onResize(({ cols, rows }) => {
+    // The rows just got re-flowed: where the line started is anyone's guess now.
+    const resized = entries.get(paneId)
+    if (resized?.lineStart) {
+      resized.lineStart.marker.dispose()
+      resized.lineStart = undefined
+    }
     // Exposed for debugging/tests: what size the shell should be using.
     if (term.element?.parentElement) term.element.parentElement.dataset.size = `${cols}x${rows}`
     const p = findPane(paneId)
@@ -460,6 +602,7 @@ export function createTerminal(paneId: string, container: HTMLElement): Entry {
     true
   )
 
+  loadCommandHistory()
   const entry: Entry = { term, fit, search, paneId, typed: new InputLine(), retry: new Retry() }
   entries.set(paneId, entry)
   return entry

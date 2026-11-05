@@ -106,6 +106,7 @@ function buildMenu(): void {
         },
         { type: 'separator' },
         item('Toggle Sidebar', 'CmdOrCtrl+B', 'toggleSidebar'),
+        item('Next Area (toolbar, sidebar, tabs, terminal)', 'CmdOrCtrl+E', 'nextArea'),
         item('Toggle SFTP Panel', 'CmdOrCtrl+Shift+F', 'toggleSftp'),
         item('AI Assistant', 'CmdOrCtrl+Shift+A', 'toggleAi'),
         item('Tunnels', 'CmdOrCtrl+Shift+U', 'tunnels'),

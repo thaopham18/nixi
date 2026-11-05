@@ -75,6 +75,8 @@ export interface Settings {
   /** WebGL terminal renderer; off = DOM renderer (slower, but immune to GPU driver issues) */
   gpuRendering: boolean
   copyOnSelect: boolean
+  /** while typing, show the last matching command from history in grey; → takes it */
+  commandSuggestions: boolean
   rightClickPaste: boolean
   warnMultilinePaste: boolean
   /** try again by itself when a connection drops */
@@ -223,4 +225,14 @@ export interface Transfer {
   current?: string
   state: 'queued' | 'running' | 'done' | 'error' | 'cancelled'
   error?: string
+}
+
+/** A question from the main process, shown in the app's choice dialog. */
+export interface ChoiceQuestion {
+  title: string
+  message: string
+  /** listed under the message */
+  items?: string[]
+  /** the first one is what closing the dialog means */
+  buttons: { label: string; value: string; primary?: boolean; danger?: boolean }[]
 }

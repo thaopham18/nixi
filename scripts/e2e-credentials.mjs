@@ -289,16 +289,13 @@ try {
 
     console.log('--- deleting a credential')
     const opsId = credentialId('Ops')
-    win.once('dialog', (d) => d.accept())
     await openManager()
     await modal.locator('.macro-row', { hasText: 'Ops' }).click()
-    win.removeAllListeners('dialog')
-    let asked = ''
-    win.once('dialog', (d) => {
-      asked = d.message()
-      d.accept()
-    })
     await modal.locator('button.danger', { hasText: 'Delete' }).click()
+    const asking = win.locator('.modal', { hasText: 'Delete credential' })
+    await asking.waitFor()
+    const asked = await asking.innerText()
+    await asking.locator('.modal-footer button', { hasText: 'Delete' }).click()
     await wait(500)
     check('warns how many sessions use it', /session\(s\)/.test(asked), asked)
     check('credential and its secret gone', !stored().credentials.some((c) => c.id === opsId) && !(`credential:${opsId}` in stored().secrets))

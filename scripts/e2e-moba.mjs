@@ -23,8 +23,8 @@ try {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: save })
   }, [ini, exportFile])
   const win = await app.firstWindow()
-  win.on('dialog', (d) => d.accept())
   await win.click('button:has-text("Import from MobaXterm")')
+  await win.locator('.modal-footer button', { hasText: 'Import' }).click()
   const pw = await win.waitForSelector('.modal input[type=password]', { timeout: 10000 }).catch(() => null)
   if (pw) await pw.press('Enter') // leave the master password empty
   const report = await win.waitForSelector('.modal .report', { timeout: 20000 })

@@ -47,6 +47,7 @@ try {
   // Macro order: drag charlie to the top, then ↓ on the selected one.
   const order = async () => (await win.evaluate(() => window.api.listMacros())).map((m) => m.name).join(',')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu:cmd', 'macros'))
+  await sleep(300)
   await win.locator('.macro-row', { hasText: 'charlie' }).dragTo(win.locator('.macro-row', { hasText: 'alpha' }), { targetPosition: { x: 40, y: 3 } })
   await sleep(300)
   check('drag a macro to the top', (await order()) === 'charlie,alpha,bravo', await order())

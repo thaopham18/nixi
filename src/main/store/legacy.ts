@@ -73,6 +73,7 @@ export function findLegacyData(): LegacyImport | undefined {
     macros: readJson(dir, 'macros.json', []),
     folders: [],
     knownHosts: readJson(dir, 'known_hosts.json', {}),
+    commandHistory: {},
     secrets
   }
   return { data, source: dir, sessions: data.sessions.length, lostSecrets }

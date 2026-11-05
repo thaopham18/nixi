@@ -19,6 +19,8 @@ export interface DbData {
   /** session folders that exist on their own (a folder with sessions exists through them anyway) */
   folders: string[]
   knownHosts: Record<string, string>
+  /** commands run per session id (or 'local'), oldest first, for suggestions while typing */
+  commandHistory: Record<string, string[]>
   /** passwords / key passphrases by session id, or credentialSecretId() (plain here: the whole file is encrypted) */
   secrets: Record<string, string>
 }
@@ -39,7 +41,7 @@ export interface DbFile {
   data: string
 }
 
-export const emptyData = (): DbData => ({ settings: {}, sessions: [], credentials: [], tunnels: [], macros: [], folders: [], knownHosts: {}, secrets: {} })
+export const emptyData = (): DbData => ({ settings: {}, sessions: [], credentials: [], tunnels: [], macros: [], folders: [], knownHosts: {}, commandHistory: {}, secrets: {} })
 
 export function newKdf(N = 2 ** 17): Kdf {
   // N = 2^17 → ~128 MB and a few hundred ms per unlock: slows down brute force of a stolen file.

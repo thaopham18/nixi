@@ -65,17 +65,20 @@ function Bar({ pct }: { pct?: number }): JSX.Element {
 }
 
 /** Where a hover popup goes: above the hovered item, from its left edge. */
-function useHoverPopup(enabled: boolean): [{ left: number; bottom: number } | undefined, React.HTMLAttributes<HTMLElement>] {
+function useHoverPopup(enabled: boolean): [{ left: number; bottom: number } | undefined, React.HTMLAttributes<HTMLElement> & { 'data-nav'?: boolean }] {
   const [at, setAt] = useState<{ left: number; bottom: number }>()
+  const show = (e: React.SyntheticEvent<HTMLElement>): void => {
+    if (!enabled) return
+    const r = e.currentTarget.getBoundingClientRect()
+    setAt({ left: r.left, bottom: window.innerHeight - r.top + 6 })
+  }
   return [
     at,
     {
-      onMouseEnter: (e) => {
-        if (!enabled) return
-        const r = e.currentTarget.getBoundingClientRect()
-        setAt({ left: r.left, bottom: window.innerHeight - r.top + 6 })
-      },
-      onMouseLeave: () => setAt(undefined)
+      onMouseEnter: show,
+      onMouseLeave: () => setAt(undefined),
+      // The same with the keyboard: arrows or Tab get here.
+      ...(enabled ? { tabIndex: 0, 'data-nav': true, onFocus: show, onBlur: () => setAt(undefined) } : {})
     }
   ]
 }

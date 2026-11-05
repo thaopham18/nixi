@@ -49,11 +49,9 @@ try {
     check(`${name} session connects`, true)
   }
   if (sessions.length === 2) console.log('SKIP  ssh (dev-ssh-server never ran on this machine)')
-  // Trust-on-first-use dialog for the RDP certificate would block: accept it automatically.
-  await app.evaluate(({ dialog }) => {
-    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false })
-  })
   await win.locator('.tree-row', { hasText: 'rdp' }).last().dblclick()
+  // Trust-on-first-use dialog for the RDP certificate would block: accept it when it comes.
+  void win.locator('.modal-footer button', { hasText: 'Trust & connect' }).click({ timeout: 60000 }).catch(() => {})
   const overlay = await win.waitForSelector('.rdp-overlay.error', { timeout: 60000 })
   const text = await overlay.innerText()
   check('RDP proxy worker + WASM client run', /logon|password|access denied/i.test(text), `(${text.split('\n')[0]})`)

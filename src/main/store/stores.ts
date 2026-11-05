@@ -1,7 +1,9 @@
 import { app } from 'electron'
 import type { Credential, CredentialInput, Macro, Session, SessionInput, Settings, Tunnel } from '@shared/types'
 import { DbStore } from './database'
-import { deleteSecret, getSecret, hasSecret, setSecret } from './secrets'
+import { allSecrets, deleteSecret, getSecret, hasSecret, setSecret } from './secrets'
+import { addToHistory } from '@shared/history'
+import { redact } from '@shared/redact'
 
 const defaultSettings: Settings = {
   theme: 'dark',
@@ -17,6 +19,7 @@ const defaultSettings: Settings = {
   autoReconnect: true,
   warnDangerousCommands: true,
   terminalEnglishOnly: true,
+  commandSuggestions: true,
   dangerWatchList: [],
   downloadDir: '',
   sftpAutoOpen: true,
@@ -38,6 +41,7 @@ const credentialStore = new DbStore('credentials', [] as Credential[])
 export const tunnelStore = new DbStore('tunnels', [] as Tunnel[])
 export const macroStore = new DbStore('macros', [] as Macro[])
 export const folderStore = new DbStore('folders', [] as string[])
+const commandHistoryStore = new DbStore('commandHistory', {} as Record<string, string[]>)
 export const knownHostsStore = new DbStore('knownHosts', {} as Record<string, string>)
 
 export function getSettings(): Settings {
@@ -174,7 +178,25 @@ export function deleteSession(ids: string | string[]): Session[] {
       .map((s) => (s.jumpSessionId && gone.has(s.jumpSessionId) ? { ...s, jumpSessionId: undefined } : s))
   )
   for (const id of gone) deleteSecret(id)
+  const history = { ...commandHistoryStore.get() }
+  for (const id of gone) delete history[id]
+  commandHistoryStore.set(history)
   return listSessions()
+}
+
+export function commandHistory(): Record<string, string[]> {
+  return commandHistoryStore.get()
+}
+
+/** Keeps a command for suggestions, unless it holds a saved password or looks like it holds a secret. */
+export function rememberCommand(key: string, command: string): void {
+  if (redact(command, allSecrets()) !== command) return
+  const history = commandHistoryStore.get()
+  commandHistoryStore.set({ ...history, [key]: addToHistory(history[key] ?? [], command) })
+}
+
+export function clearCommandHistory(): void {
+  commandHistoryStore.set({})
 }
 
 export function touchSession(id: string): void {

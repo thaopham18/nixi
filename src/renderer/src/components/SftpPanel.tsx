@@ -4,7 +4,8 @@ import type { ConflictMode, RemoteFile } from '@shared/types'
 import { baseName, formatMode, formatSize, joinRemote, parentRemote } from '@shared/parse'
 import { formatBytes } from '@shared/stats'
 import { api, errorMessage, uid } from '../api'
-import { askChoice, promptText, showMenu, toast, useStore } from '../store'
+import { useNavList } from '../keynav'
+import { askChoice, confirmDelete, promptText, showMenu, toast, useStore } from '../store'
 import { FileIcon, FolderIcon, ToolIcon } from './Icons'
 
 /** Remembers the last directory per connection while the panel is switched away. */
@@ -43,6 +44,7 @@ export function SftpPanel(): JSX.Element {
   const [pathInput, setPathInput] = useState('')
   const [files, setFiles] = useState<RemoteFile[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const rows = useNavList<HTMLTableSectionElement>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   // In the store: this component goes away when another sidebar tab opens.
@@ -155,8 +157,8 @@ export function SftpPanel(): JSX.Element {
         const mode = await conflictMode(connId, 'up', paths.map(baseName), target)
         if (mode) await api.sftpUpload(connId, paths, target, mode)
       }),
-    remove: (targets: RemoteFile[]) => {
-      if (window.confirm(`Delete ${targets.map((f) => f.name).join(', ')}? This cannot be undone.`))
+    remove: async (targets: RemoteFile[]) => {
+      if (await confirmDelete('Delete', `Delete ${targets.map((f) => f.name).join(', ')}? This cannot be undone.`))
         void run(() => api.sftpRemove(connId, targets.map((f) => f.path)))
     },
     rename: async (f: RemoteFile) => {
@@ -282,9 +284,9 @@ export function SftpPanel(): JSX.Element {
               <th>Perms</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={rows} data-nav-list>
             {dir !== '/' && (
-              <tr onDoubleClick={() => void load(parentRemote(dir))}>
+              <tr data-nav data-open tabIndex={-1} onDoubleClick={() => void load(parentRemote(dir))}>
                 <td colSpan={4} className="name">
                   <FolderIcon /> ..
                 </td>
@@ -294,6 +296,9 @@ export function SftpPanel(): JSX.Element {
               <tr
                 key={f.path}
                 className={`${selected.has(f.path) ? 'selected' : ''} ${dropDir === f.path ? 'drop-into' : ''}`}
+                data-nav
+                data-open
+                tabIndex={-1}
                 draggable
                 onDragStart={(e) => dragOut(e, f)}
                 onDragOver={(e) => {

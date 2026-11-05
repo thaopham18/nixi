@@ -3,7 +3,8 @@ import type { Settings } from '@shared/types'
 import type { DbStatusInfo } from '../../../preload'
 import { needsModifier } from '@shared/macro'
 import { api, isMac } from '../api'
-import { useStore, type SettingsPage } from '../store'
+import { toast, useStore, type SettingsPage } from '../store'
+import { forgetCommandHistory } from '../history'
 import { ToolIcon } from './Icons'
 import { changeMasterPassword } from '../actions'
 import { Modal } from './Overlays'
@@ -257,7 +258,7 @@ export function SettingsDialog(): JSX.Element {
     const dangerWatchList = (s.dangerWatchList ?? []).map((w) => w.trim()).filter(Boolean)
     useStore.setState({ settings: await api.setSettings({ ...s, dangerWatchList }), modal: null })
   }
-  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'autoReconnect' | 'warnDangerousCommands' | 'sftpAutoOpen' | 'terminalEnglishOnly', label: string): JSX.Element => (
+  const check = (k: 'copyOnSelect' | 'rightClickPaste' | 'warnMultilinePaste' | 'autoReconnect' | 'warnDangerousCommands' | 'sftpAutoOpen' | 'terminalEnglishOnly' | 'commandSuggestions', label: string): JSX.Element => (
     <label className="check">
       <input name={k} type="checkbox" checked={s[k]} onChange={(e) => set(k, e.target.checked)} /> {label}
     </label>
@@ -367,10 +368,23 @@ export function SettingsDialog(): JSX.Element {
           ) : (
             <p className="muted small">Tools that rewrite text after you type (Unikey, EVKey) can't be stopped on this system. Add Nixi to their list of excluded apps.</p>
           )}
+          <h4>Command suggestions</h4>
+          {check('commandSuggestions', 'Suggest commands from history while typing')}
+          <p className="muted small">The last matching command you ran in Nixi shows in grey. Press → or End to take it, then Enter to run it. Kept in the encrypted database and left out when it looks like it holds a secret.</p>
+          <div className="row">
+            <button
+              onClick={() => {
+                forgetCommandHistory()
+                void api.clearCommandHistory().then(() => toast('Command history cleared'))
+              }}
+            >
+              Clear history
+            </button>
+          </div>
           <h4>Copy &amp; paste</h4>
-          {check('copyOnSelect', 'Copy text on selection')}
+          {check('copyOnSelect', 'Copy text on selection (terminal and AI chat)')}
           {check('rightClickPaste', 'Right-click pastes')}
-          {check('warnMultilinePaste', 'Warn before pasting multiple lines')}
+          {check('warnMultilinePaste', 'Show multiple lines before pasting, so they can be changed')}
         </section>
 
         <section {...pageOf('connections')}>

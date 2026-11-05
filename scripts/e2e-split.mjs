@@ -31,7 +31,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const app = await electron.launch({ args: ['.'], env: { ...process.env, NIXI_USER_DATA: userData, NIXI_TEST_PASSWORD: 'e2e-master' } })
 try {
   const win = await app.firstWindow()
-  win.on('dialog', (d) => d.accept())
   await win.waitForSelector('.tree-row')
   await win.locator('.tree-row.folder', { hasText: 'Sub' }).click()
   for (const n of ['srv-a', 'srv-b', 'srv-c']) {
@@ -81,6 +80,7 @@ try {
 
   await win.locator('.tree-row.folder', { hasText: 'Grp' }).first().click({ button: 'right' })
   await win.locator('.context-menu .item', { hasText: 'Delete folder' }).click()
+  await win.locator('.modal-footer button', { hasText: 'Delete' }).click()
   await sleep(500)
   const names = await win.locator('.session-tree .tree-row').allInnerTexts()
   check('delete folder removes it with subfolders', !names.some((t) => /Grp|srv-/.test(t)) && names.some((t) => /keep-me/.test(t)), JSON.stringify(names))
@@ -118,6 +118,7 @@ try {
   await win.screenshot({ path: join(tmpdir(), 'nixi-e2e-folders.png') })
   await win.locator('.tree-row.folder', { hasText: 'Lab' }).first().click({ button: 'right' })
   await win.locator('.context-menu .item', { hasText: 'Delete folder' }).click()
+  await win.locator('.modal-footer button', { hasText: 'Delete' }).click()
   await sleep(300)
   check('empty folder can be deleted', (await win.locator('.tree-row.folder').count()) === 0 && JSON.stringify(await win.evaluate(() => window.api.listFolders())) === '[]')
 } catch (err) {

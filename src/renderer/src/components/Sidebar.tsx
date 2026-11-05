@@ -2,7 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import type { Session } from '@shared/types'
 import { buildTree, type FolderNode } from '@shared/parse'
 import { api, uid } from '../api'
-import { activePaneOf, promptText, showMenu, toast, useStore, type MenuItem } from '../store'
+import { useNavList } from '../keynav'
+import { activePaneOf, confirmDelete, promptText, showMenu, toast, useStore, type MenuItem } from '../store'
 import { importFromMobaXterm, newSession, openRdpExternal, openSession, openSessionInSplit, openVncExternal } from '../actions'
 import { SftpPanel } from './SftpPanel'
 import { AiPanel } from './AiPanel'
@@ -174,7 +175,7 @@ function SessionTree(): JSX.Element {
         label: `Delete ${chosen.length} sessions`,
         danger: true,
         onClick: async () => {
-          if (!window.confirm(`Delete ${chosen.length} sessions?\nSaved passwords for them are removed too. This cannot be undone.`)) return
+          if (!(await confirmDelete('Delete sessions', `Delete ${chosen.length} sessions?\nSaved passwords for them are removed too. This cannot be undone.`))) return
           useStore.setState({ sessions: await api.deleteSession(chosen.map((s) => s.id)) })
           setSelected(new Set())
         }
@@ -204,7 +205,7 @@ function SessionTree(): JSX.Element {
         label: 'Delete',
         danger: true,
         onClick: async () => {
-          if (window.confirm(`Delete session "${s.name}"?`))
+          if (await confirmDelete('Delete session', `Delete session "${s.name}"?`))
             useStore.setState({ sessions: await api.deleteSession(s.id) })
         }
       }
@@ -244,7 +245,7 @@ function SessionTree(): JSX.Element {
           const msg = inside.length
             ? `Delete folder "${f.path}" and the ${inside.length} session(s) inside it, including subfolders?\nSaved passwords for them are removed too. This cannot be undone.`
             : `Delete the empty folder "${f.path}"?`
-          if (!window.confirm(msg)) return
+          if (!(await confirmDelete('Delete folder', msg))) return
           if (inside.length) useStore.setState({ sessions: await api.deleteSession(inside.map((s) => s.id)) })
           await saveFolders(folders.filter((p) => !within(p, f.path)))
           toast(`Deleted folder "${f.name}" (${inside.length} sessions)`)
@@ -255,12 +256,16 @@ function SessionTree(): JSX.Element {
   // What the search hides is not selected: a drag or delete must not touch rows out of sight.
   const chosen = new Set(filtered.filter((s) => selected.has(s.id)).map((s) => s.id))
 
+  const list = useNavList<HTMLDivElement>()
+
   const renderFolder = (f: FolderNode<Session>, depth: number): JSX.Element => (
     <div key={f.path || '__root'}>
       {f.path && (
         <div
           className={`tree-row folder ${dropFolder === f.path ? 'drop-into' : ''}`}
           aria-expanded={!collapsed[f.path] || !!filter}
+          data-nav
+          tabIndex={-1}
           style={{ paddingLeft: 8 + (depth - 1) * 14 }}
           onClick={() => setCollapsed((c) => ({ ...c, [f.path]: !c[f.path] }))}
           onContextMenu={(e) => folderMenu(e, f)}
@@ -283,6 +288,9 @@ function SessionTree(): JSX.Element {
               key={s.id}
               className={`tree-row ${chosen.has(s.id) ? 'selected' : ''} ${dragIds?.includes(s.id) ? 'dragging' : ''}`}
               style={{ paddingLeft: 8 + depth * 14 }}
+              data-nav
+              data-open
+              tabIndex={-1}
               draggable
               onClick={(e) => clickRow(e, s)}
               onDragStart={(e) => {
@@ -332,6 +340,8 @@ function SessionTree(): JSX.Element {
         </button>
       </div>
       <div
+        ref={list}
+        data-nav-list
         className={`tree ${dropFolder === '' ? 'drop-into' : ''}`}
         onContextMenu={backgroundMenu}
         onClick={(e) => e.target === e.currentTarget && setSelected(new Set())}
@@ -343,7 +353,7 @@ function SessionTree(): JSX.Element {
           <>
             <div className="tree-section">Recent</div>
             {recent.map((s) => (
-              <div key={'r' + s.id} className="tree-row" style={{ paddingLeft: 8 }} onDoubleClick={() => openSession(s)}>
+              <div key={'r' + s.id} className="tree-row" style={{ paddingLeft: 8 }} data-nav data-open tabIndex={-1} onDoubleClick={() => openSession(s)}>
                 <ClockIcon />
                 <span className="tree-name">{s.name}</span>
               </div>
