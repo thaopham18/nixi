@@ -35,7 +35,10 @@ interface Entry {
 }
 
 /** A full-screen program that lost its connection can't switch these back itself. */
-const RESET_MODES = '\x1b[?1049l\x1b[?1l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[0m'
+const RESET_MODES = '\x1b[?1l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[0m'
+/** Only when one is open: this also restores the saved cursor, which on the normal screen sends
+ *  the next text back over old output. */
+const LEAVE_ALT_SCREEN = '\x1b[?1049l'
 
 const entries = new Map<string, Entry>()
 const paneByConn = new Map<string, string>()
@@ -113,7 +116,7 @@ api.onStatus((s) => {
     store.updatePane(paneId, { state: 'closed', connId: undefined })
     const entry = entries.get(paneId)
     if (!entry) return
-    entry.term.write(RESET_MODES)
+    entry.term.write((entry.term.buffer.active.type === 'alternate' ? LEAVE_ALT_SCREEN : '') + RESET_MODES)
     entry.typed = new InputLine()
     entry.retry.down()
     const left = entry.leftAt !== undefined && Date.now() - entry.leftAt < 5000

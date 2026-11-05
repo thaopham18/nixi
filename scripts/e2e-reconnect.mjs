@@ -170,6 +170,26 @@ try {
   check('…R reconnects', await up())
   await sleep(300)
 
+  // The shell timing out (bash TMOUT) reports an exit code. The notice must land under the last
+  // output, wherever the cursor was last saved: leaving an alternate screen that isn't open
+  // restores that saved cursor.
+  const idleOut = async (name, before) => {
+    await type(`clear; ${before}echo ${name}-a; echo ${name}-b; echo ${name}-c\r`)
+    check(`${name}: output is there`, await sees(new RegExp(`\\n${name}-c`), 5000), await text())
+    await type('exec bash --norc --noprofile\r')
+    await sleep(500)
+    await type('TMOUT=1\r')
+    check(`${name}: idle logout closes, no retrying`, await sees(/Session closed[\s\S]*Press R/, 8000), await text())
+    const screen = await text()
+    check(`${name}: nothing overwritten`, [`${name}-a`, `${name}-b`, `${name}-c`].every((l) => screen.includes(l)), screen)
+    check(`${name}: the notice is under the last output`, screen.lastIndexOf('Session closed') > screen.lastIndexOf(`${name}-c`), screen)
+    await win.keyboard.press('r')
+    await up()
+    await sleep(500)
+  }
+  await idleOut('nosave', '')
+  await idleOut('saved', "printf '\\033''7'; ")
+
   await stop(sshd, SSH)
   check('Esc: stops the loop', await sees(/Reconnecting in/))
   await win.keyboard.press('Escape')
