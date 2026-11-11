@@ -170,8 +170,16 @@ export interface OpenConnRequest {
   /** one-off login typed in a prompt */
   username?: string
   password?: string
+  /** log in with this saved credential (SSH: may be a key) instead of the session's own login */
+  credentialId?: string
   cols: number
   rows: number
+}
+
+/** A saved secret to answer a password prompt with: a credential's, or the session's own. */
+export interface SecretSource {
+  credentialId?: string
+  sessionId?: string
 }
 
 export interface OpenConnResult {

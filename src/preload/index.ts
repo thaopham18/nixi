@@ -16,7 +16,7 @@ import type {
   Settings,
   Transfer,
   Tunnel,
-  TunnelStatus, ChoiceQuestion } from '@shared/types'
+  TunnelStatus, ChoiceQuestion, SecretSource } from '@shared/types'
 import type { MobaPreview, MobaReport } from '../main/import/mobaxterm'
 import type { ServerStats } from '@shared/stats'
 
@@ -98,6 +98,8 @@ const api = {
 
   openConn: (req: OpenConnRequest): Promise<OpenConnResult> => invoke('conn:open', req),
   write: (id: string, data: string): void => ipcRenderer.send('conn:write', id, data),
+  /** answer a password prompt with a saved secret; main types it, the renderer never sees it */
+  typeSecret: (id: string, from: SecretSource): Promise<void> => invoke('conn:typeSecret', id, from),
   resize: (id: string, cols: number, rows: number): void => ipcRenderer.send('conn:resize', id, cols, rows),
   closeConn: (id: string): void => ipcRenderer.send('conn:close', id),
   onData: (cb: (id: string, data: string) => void) => on('conn:data', cb),

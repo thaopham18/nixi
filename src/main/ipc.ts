@@ -4,7 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { AiAnswer, AiMessageInput, AiProviderId } from '@shared/ai'
-import type { Credential, CredentialInput, Macro, OpenConnRequest, Session, SessionInput, Settings, Tunnel } from '@shared/types'
+import type { Credential, CredentialInput, Macro, OpenConnRequest, SecretSource, Session, SessionInput, Settings, Tunnel } from '@shared/types'
 import { parseSshConfig, splitDomainUser } from '@shared/parse'
 import { setSecureInput } from './secure-input'
 import {
@@ -32,7 +32,7 @@ import {
 import * as db from './store/database'
 import { findLegacyData } from './store/legacy'
 import { APP_NAME, AUTHOR, AUTHOR_EMAIL, copyright } from '@shared/about'
-import { closeConn, openConn, resizeConn, watchStats, writeConn } from './conn/manager'
+import { closeConn, openConn, resizeConn, typeSecret, watchStats, writeConn } from './conn/manager'
 import { aiAnswer, aiClear, aiHasKey, aiSend, aiStop, previewAttachment, setAiKey, testAiKey, aiIsReady, listAiModels, type AiTarget } from './ai/chat'
 import * as sftp from './ssh/sftp'
 import { listTunnels, saveTunnels, startTunnel, stopTunnel, tunnelStatuses } from './ssh/tunnels'
@@ -260,6 +260,7 @@ export function registerIpc(): void {
 
   handle('conn:open', (_e, req: OpenConnRequest) => openConn(req))
   ipcMain.on('conn:write', (_e, id: string, data: string) => writeConn(id, data))
+  handle('conn:typeSecret', (_e, id: string, from: SecretSource) => typeSecret(id, from))
   ipcMain.on('conn:resize', (_e, id: string, cols: number, rows: number) => resizeConn(id, cols, rows))
   ipcMain.on('conn:close', (_e, id: string) => closeConn(id))
   ipcMain.on('conn:stats', (_e, id: string, on: boolean) => watchStats(id, on))

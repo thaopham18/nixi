@@ -34,6 +34,9 @@ json('sessions.json', [
   ssh('pick-ram'),
   ssh('pick-save'),
   ssh('pick-nopw'),
+  ssh('pick-key'),
+  ssh('pick-key-save'),
+  ssh('wrong-then-key', { username: 'test', auth: 'password' }),
   ssh('form-link'),
   ssh('other-link'),
   ssh('key-link'),
@@ -41,6 +44,7 @@ json('sessions.json', [
   ssh('via-jump', { username: 'test', jumpSessionId: 'jump' }),
   ssh('known-user', { username: 'nobody', auth: 'password' }),
   { id: 'rdp-link', name: 'rdp-link', type: 'rdp', folder: '', host: '127.0.0.1', port: 3389 },
+  { id: 'rdp-ask', name: 'rdp-ask', type: 'rdp', folder: '', host: '127.0.0.1', port: 3389 },
   { id: 'vnc-link', name: 'vnc-link', type: 'vnc', folder: '', host: '127.0.0.1', port: vncServer.port }
 ])
 json('known_hosts.json', { [`[127.0.0.1]:${SSH_PORT}`]: 'SHA256:' + createHash('sha256').update(hostKey.getPublicSSH()).digest('base64').replace(/=+$/, '') })
@@ -165,7 +169,7 @@ try {
     await open('pick-ram')
     await loginDialog()
     const options = await modal.locator('select[name=credential] option').allInnerTexts()
-    check('dialog offers password credentials, not keys', options.some((o) => o.includes('Ops')) && !options.some((o) => o.includes('Keyed')), options.join(' | '))
+    check('SSH dialog offers every credential, keys too', ['Ops', 'Keyed', 'Win', 'No password'].every((n) => options.some((o) => o.includes(n))), options.join(' | '))
     await modal.locator('select[name=credential]').selectOption({ label: 'Ops (test)' })
     await wait(200)
     check('picking fills username and password', (await modal.locator('input[name=username]').inputValue()) === 'test' && (await modal.locator('input[type=password]').inputValue()) === 'test')
@@ -210,6 +214,53 @@ try {
     check('credential without a password: username filled, focus on password', (await win.evaluate(() => document.activeElement?.type)) === 'password' && (await modal.locator('input[name=username]').inputValue()) === 'test')
     await modal.locator('input[type=password]').fill('edited')
     check('…editing a field drops the link to it', (await modal.locator('select[name=credential]').inputValue()) === '')
+    await closeTab()
+
+    console.log('--- key credential in the login dialog')
+    await open('pick-key')
+    await loginDialog()
+    await modal.locator('select[name=credential]').selectOption({ label: 'Keyed (test)' })
+    await wait(200)
+    await win.screenshot({ path: join(tmpdir(), 'nixi-credential-login-key.png') })
+    check('picking a key: username filled, no password field, says which key', (await modal.locator('input[name=username]').inputValue()) === 'test' && (await modal.locator('input[type=password]').count()) === 0 && /Logs in with the key .*key \(passphrase saved\)/.test(await modal.innerText()), (await modal.innerText()).replace(/\n/g, ' | '))
+    check('…focus on OK', (await win.evaluate(() => document.activeElement?.textContent)) === 'OK')
+    await win.keyboard.press('Enter')
+    check('…connects with the key and its saved passphrase', (await connected()) && (await noDialog()))
+    await wait()
+    check('…unticked: the session is not changed', !session('pick-key').credentialId && !session('pick-key').username && !stored().secrets['pick-key'])
+    await closeTab()
+    await open('pick-key')
+    check('…same run: reopening uses it again without asking', (await connected()) && (await noDialog()))
+    await closeTab()
+
+    await open('pick-key-save')
+    await loginDialog()
+    await modal.locator('select[name=credential]').selectOption({ label: 'Keyed (test)' })
+    await wait(200)
+    await modal.locator('label.check input').check()
+    await modal.locator('button.primary').click()
+    check('key ticked: connects', await connected())
+    await wait()
+    check('…session links the key credential', session('pick-key-save').credentialId === credentialId('Keyed') && !stored().secrets['pick-key-save'])
+    await closeTab()
+
+    await open('wrong-then-key')
+    let pw = await loginDialog()
+    await pw.fill('wrong')
+    await pw.press('Enter')
+    await win.waitForSelector('.modal .error-line:has-text("rejected")', { timeout: 12000 })
+    const again = await modal.locator('select[name=credential] option').allInnerTexts()
+    check('wrong password: the dialog asking again offers the key credential', again.some((o) => o.includes('Keyed')), again.join(' | '))
+    await modal.locator('select[name=credential]').selectOption({ label: 'Keyed (test)' })
+    await wait(200)
+    await modal.locator('button.primary').click()
+    check('…and logs in with the key', (await connected()) && (await noDialog()))
+    await closeTab()
+
+    await open('rdp-ask')
+    const rdpAsk = await win.waitForSelector('.modal select[name=credential]', { timeout: 12000 }).then(() => true, () => false)
+    const rdpAskOptions = rdpAsk ? await modal.locator('select[name=credential] option').allInnerTexts() : []
+    check('RDP login dialog offers password credentials only', rdpAsk && rdpAskOptions.some((o) => o.includes('Win')) && !rdpAskOptions.some((o) => o.includes('Keyed')), rdpAskOptions.join(' | '))
     await closeTab()
 
     console.log('--- session dialog')
@@ -304,6 +355,66 @@ try {
     await closeManager()
     await open('other-link')
     check('…and still connect', (await connected()) && (await noDialog()))
+    await closeTab()
+
+    console.log('--- saved password at a password prompt (sudo-like)')
+    const answered = join(userData, 'answered.txt')
+    // The answer goes to a file: the screen doesn't echo it. Emptied here, not with rm (a dangerous command).
+    const promptCmd = () => {
+      writeFileSync(answered, '')
+      return `printf 'Password: '; stty -echo; read P; stty echo; echo; echo "got-$P" > ${answered}\r`
+    }
+    const readAnswer = async () => {
+      for (let i = 0; i < 30; i++) {
+        const got = readFileSync(answered, 'utf8').trim()
+        if (got) return got
+        await wait(100)
+      }
+      return ''
+    }
+    const picker = win.locator('.macro-picker')
+    const pickerItems = () => win.locator('.macro-picker-item').allInnerTexts().then((l) => l.map((t) => t.replace(/\s+/g, ' ').trim()))
+    const menuCmd = (c) => app.evaluate(({ BrowserWindow }, cmd) => BrowserWindow.getAllWindows()[0].webContents.send('menu:cmd', cmd), c)
+
+    await open('other-link')
+    await connected()
+    await wait(800)
+    await menuCmd('macroPicker')
+    await wait(300)
+    check('no password prompt, no macros: no picker, says why', (await picker.count()) === 0 && (await win.locator('.toast', { hasText: 'No macros yet' }).count()) > 0)
+    await win.keyboard.type(promptCmd())
+    await wait(800)
+    await menuCmd('macroPicker')
+    await picker.waitFor({ timeout: 5000 })
+    const offered = await pickerItems()
+    await win.screenshot({ path: join(tmpdir(), 'nixi-credential-sudo.png') })
+    check('at the prompt: the session password first, then credentials with a secret', /^Password of other-link/.test(offered[0] ?? '') && offered.some((t) => t.startsWith('Win')) && offered.some((t) => t.startsWith('Keyed')) && !offered.some((t) => t.startsWith('No password')), offered.join(' | '))
+    check('…focus in the filter, first one selected', (await win.evaluate(() => document.activeElement?.closest('.macro-picker') !== null)) && /^Password of/.test(await win.locator('.macro-picker-item.selected').innerText()))
+    await win.keyboard.press('Enter')
+    check('Enter types the session password and Enter', (await readAnswer()) === 'got-test')
+    check('…picker closed, terminal has the keys again', (await picker.count()) === 0 && (await win.evaluate(() => document.activeElement?.classList.contains('xterm-helper-textarea'))))
+    await wait(300)
+    await win.keyboard.type(promptCmd())
+    await wait(800)
+    await menuCmd('macroPicker')
+    await picker.waitFor({ timeout: 5000 })
+    await win.keyboard.type('win')
+    await win.keyboard.press('Enter')
+    check('filtering picks a credential: its password is typed', (await readAnswer()) === 'got-good')
+    check('…the password never reaches the screen or the history', !(await win.evaluate(() => document.body.innerText)).includes('got-good') && !JSON.stringify(stored().commandHistory ?? {}).includes('good'))
+    await closeTab()
+
+    await open('pick-key-save')
+    await connected()
+    await wait(800)
+    await win.keyboard.type(promptCmd())
+    await wait(800)
+    await menuCmd('macroPicker')
+    await picker.waitFor({ timeout: 5000 })
+    const linkedFirst = await pickerItems()
+    check('a session using a credential: that credential first', /^Keyed passphrase · this session/.test(linkedFirst[0] ?? ''), linkedFirst.join(' | '))
+    await win.keyboard.press('Escape')
+    check('…Esc closes it, nothing typed', (await picker.count()) === 0 && (await readAnswer()) === '')
     await closeTab()
 
     console.log('--- export')

@@ -1,11 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { Macro } from '@shared/types'
+import { savedSecrets, type SavedSecret } from '../actions'
 import { useStore } from '../store'
-import { focusTerminal, runMacro, typeIntoField } from '../terminals'
+import { focusTerminal, runMacro, typeIntoField, typeSavedSecret } from '../terminals'
+import { ToolIcon } from './Icons'
+
+type Item = { kind: 'secret'; s: SavedSecret } | { kind: 'macro'; m: Macro; n: number }
 
 /**
  * Macro list popped up at the terminal cursor (menu "Run Macro at Cursor…"), or under the focused
  * text field, e.g. a password prompt; there the macro is typed into the field.
  * ↑/↓ move, Enter runs, 1–9 run directly (while the filter is empty), typing filters, Esc closes.
+ * At a password prompt the saved passwords come first: main types the one picked, plus Enter.
  */
 export function MacroPicker(): JSX.Element | null {
   const at = useStore((s) => s.macroPicker)
@@ -14,8 +20,10 @@ export function MacroPicker(): JSX.Element | null {
   return <Picker key={`${at.paneId ?? 'field'}:${at.x}:${at.y}`} {...at} />
 }
 
-function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<typeof useStore.getState>['macroPicker']>): JSX.Element {
+function Picker({ paneId, field, x, y, lineHeight, asksSecret }: NonNullable<ReturnType<typeof useStore.getState>['macroPicker']>): JSX.Element {
   const macros = useStore((s) => s.macros)
+  const credentials = useStore((s) => s.credentials)
+  const sessions = useStore((s) => s.sessions)
   const [filter, setFilter] = useState('')
   const [index, setIndex] = useState(0)
   const [pos, setPos] = useState({ left: x, top: y + 2, ready: false })
@@ -24,10 +32,15 @@ function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<type
   const input = useRef<HTMLInputElement>(null)
 
   // Numbers follow the order in the macro list, also while filtering.
-  const shown = useMemo(() => {
+  const shown = useMemo((): Item[] => {
     const q = filter.trim().toLowerCase()
-    return macros.map((m, i) => ({ m, n: i + 1 })).filter(({ m }) => !q || m.name.toLowerCase().includes(q))
-  }, [macros, filter])
+    const secrets = asksSecret && paneId ? savedSecrets(paneId) : []
+    return [
+      ...secrets.map((s) => ({ kind: 'secret' as const, s })).filter(({ s }) => !q || s.name.toLowerCase().includes(q)),
+      ...macros.map((m, i) => ({ kind: 'macro' as const, m, n: i + 1 })).filter(({ m }) => !q || m.name.toLowerCase().includes(q))
+    ]
+    // credentials and sessions: a password saved or removed while it is open
+  }, [macros, filter, asksSecret, paneId, credentials, sessions])
   const sel = Math.min(index, Math.max(shown.length - 1, 0))
 
   // Below the cursor line; above it when there is no room; never off the right edge.
@@ -57,7 +70,9 @@ function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<type
     const item = shown[i]
     if (!item) return
     close()
-    if (field) void typeIntoField(field, item.m)
+    if (item.kind === 'secret') {
+      if (paneId) void typeSavedSecret(paneId, item.s.from)
+    } else if (field) void typeIntoField(field, item.m)
     else if (paneId) void runMacro(item.m, paneId)
   }
 
@@ -79,7 +94,7 @@ function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<type
       close()
     } else if (!filter && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault()
-      const i = shown.findIndex((s) => s.n === Number(e.key))
+      const i = shown.findIndex((s) => s.kind === 'macro' && s.n === Number(e.key))
       if (i >= 0) run(i)
     }
   }
@@ -94,7 +109,7 @@ function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<type
       >
         <input
           ref={input}
-          placeholder="Run macro…"
+          placeholder={asksSecret ? 'Saved password or macro…' : 'Run macro…'}
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value)
@@ -103,22 +118,34 @@ function Picker({ paneId, field, x, y, lineHeight }: NonNullable<ReturnType<type
           onBlur={(e) => e.relatedTarget === null && e.target.focus()}
         />
         <div className="macro-picker-list" ref={list}>
-          {shown.map(({ m, n }, i) => (
+          {shown.map((item, i) => (
             <div
-              key={m.id}
-              className={`macro-picker-item ${i === sel ? 'selected' : ''}`}
+              key={item.kind === 'secret' ? item.s.key : item.m.id}
+              className={`macro-picker-item ${item.kind === 'secret' ? 'secret' : ''} ${i === sel ? 'selected' : ''}`}
               onMouseMove={() => i !== sel && setIndex(i)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => run(i)}
             >
-              <span className="num">{n <= 9 ? n : ''}</span>
-              <span className="name">{m.name}</span>
-              {m.hotkey && <span className="hotkey">{m.hotkey}</span>}
+              {item.kind === 'secret' ? (
+                <>
+                  <span className="num">
+                    <ToolIcon name="key" />
+                  </span>
+                  <span className="name">{item.s.name}</span>
+                  <span className="hotkey">{item.s.detail}</span>
+                </>
+              ) : (
+                <>
+                  <span className="num">{item.n <= 9 ? item.n : ''}</span>
+                  <span className="name">{item.m.name}</span>
+                  {item.m.hotkey && <span className="hotkey">{item.m.hotkey}</span>}
+                </>
+              )}
             </div>
           ))}
-          {!shown.length && <div className="macro-picker-empty">No macro matches</div>}
+          {!shown.length && <div className="macro-picker-empty">{asksSecret ? 'Nothing matches' : 'No macro matches'}</div>}
         </div>
-        <div className="macro-picker-hint">↑↓ select · ↵ run · 1–9 · esc</div>
+        <div className="macro-picker-hint">{asksSecret ? `↑↓ select · ↵ type it${macros.length ? ' · 1–9 macro' : ''} · esc` : '↑↓ select · ↵ run · 1–9 · esc'}</div>
       </div>
     </div>
   )

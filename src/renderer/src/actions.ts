@@ -1,8 +1,8 @@
-import type { Session } from '@shared/types'
+import type { Credential, SecretSource, Session } from '@shared/types'
 import { api, errorMessage } from './api'
-import { activePane, promptText, toast, useStore, type Layout, type Pane, confirmAction } from './store'
+import { activePane, findPane, promptText, toast, useStore, type Layout, type Pane, confirmAction } from './store'
 import { nextArea } from './keynav'
-import { copySelection, cursorPoint, disposeTerminal, focusedField, getEntry, pasteInto, connectPane, startRecording, stopRecording } from './terminals'
+import { copySelection, cursorPoint, disposeTerminal, waitsForSecret, focusedField, getEntry, pasteInto, connectPane, startRecording, stopRecording } from './terminals'
 import { disposeRdp, reconnectRdp } from './rdp'
 import { disposeVnc, reconnectVnc } from './vnc'
 import { uid } from './api'
@@ -368,16 +368,45 @@ export function handleMenu(cmd: string): void {
 /** Pop the macro list up where the terminal cursor is (or under the focused text field); arrows + Enter pick one. */
 export function openMacroPicker(): void {
   const s = useStore.getState()
-  if (!s.macros.length) return toast('No macros yet: record one or add it in Macros…', true)
+  const noMacros = (): void => toast('No macros yet: record one or add it in Macros…', true)
   const field = focusedField()
   if (field) {
+    if (!s.macros.length) return noMacros()
     const r = field.getBoundingClientRect()
     return s.set({ macroPicker: { field, x: r.left, y: r.bottom, lineHeight: r.height } })
   }
   const pane = activePane()
   if (!pane || !pane.connId) return toast('Focus a connected terminal or a text field first', true)
+  // At a password prompt the saved passwords come first, so the macros needn't hold any.
+  const asksSecret = waitsForSecret(pane.id) && savedSecrets(pane.id).length > 0
+  if (!s.macros.length && !asksSecret) return noMacros()
   const at = cursorPoint(pane.id)
   const box = document.querySelector('.tab-views')?.getBoundingClientRect()
   const fallback = { x: (box?.left ?? 0) + 40, y: (box?.top ?? 0) + 40, lineHeight: 16 }
-  s.set({ macroPicker: { paneId: pane.id, ...(at ?? fallback) } })
+  s.set({ macroPicker: { paneId: pane.id, asksSecret, ...(at ?? fallback) } })
+}
+
+export interface SavedSecret {
+  key: string
+  name: string
+  /** what it is, beside the name */
+  detail: string
+  from: SecretSource
+}
+
+/**
+ * Saved passwords that may answer a prompt in this pane: the credential the session uses, then the
+ * session's own password (sudo usually wants the login one), then every other credential.
+ */
+export function savedSecrets(paneId: string): SavedSecret[] {
+  const { credentials, sessions } = useStore.getState()
+  const session = sessions.find((x) => x.id === findPane(paneId)?.sessionId)
+  const linked = credentials.find((c) => c.id === session?.credentialId)
+  const list: SavedSecret[] = []
+  const credential = (c: Credential, detail: string): SavedSecret => ({ key: `c:${c.id}`, name: c.name, detail, from: { credentialId: c.id } })
+  if (linked?.hasSecret) list.push(credential(linked, linked.kind === 'key' ? 'passphrase · this session' : 'this session'))
+  else if (session && !session.credentialId && session.hasSecret && (session.auth ?? 'password') === 'password' && (session.type === 'ssh' || session.type === 'telnet'))
+    list.push({ key: `s:${session.id}`, name: `Password of ${session.name}`, detail: 'this session', from: { sessionId: session.id } })
+  for (const c of credentials) if (c.hasSecret && c !== linked) list.push(credential(c, c.kind === 'key' ? 'passphrase' : c.username ? c.username : 'password'))
+  return list
 }

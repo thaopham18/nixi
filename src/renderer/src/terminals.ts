@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
-import type { Macro, Session, Settings } from '@shared/types'
+import type { Macro, SecretSource, Session, Settings } from '@shared/types'
 import { MacroRecorder } from '@shared/macro'
 import { asksForSecret, looksLikePrompt } from '@shared/ai'
 import { parsePrompt } from '@shared/parse'
@@ -381,6 +381,27 @@ export async function pasteInto(paneId: string, text?: string): Promise<void> {
 }
 
 /** Screen position of the terminal cursor (bottom-left of its cell), for popups like the macro picker. */
+/** The line at the cursor asks for a password (sudo, su, mysql -p…), so a saved one may answer it. */
+export function waitsForSecret(paneId: string): boolean {
+  const term = entries.get(paneId)?.term
+  if (!term) return false
+  const buf = term.buffer.active
+  const y = buf.baseY + buf.cursorY
+  let first = y
+  while (first > 0 && buf.getLine(first)?.isWrapped) first--
+  let before = ''
+  for (let r = first; r <= y; r++) before += buf.getLine(r)?.translateToString(false, 0, r === y ? buf.cursorX : undefined) ?? ''
+  return asksForSecret(before)
+}
+
+/** Answer the password prompt in this pane with a saved secret. Main types it: it never comes here. */
+export async function typeSavedSecret(paneId: string, from: SecretSource): Promise<void> {
+  const connId = findPane(paneId)?.connId
+  if (!connId) return
+  quiet(connId, 1000)
+  await api.typeSecret(connId, from).catch((err) => toast(errorMessage(err), true))
+}
+
 export function cursorPoint(paneId: string): { x: number; y: number; lineHeight: number } | undefined {
   const term = entries.get(paneId)?.term
   const screen = term?.element?.querySelector('.xterm-screen')
@@ -690,23 +711,24 @@ export async function connectPane(paneId: string, auto = false): Promise<void> {
   entry.reconnecting = auto
   if (sessionId) entry.term.write(auto ? `\r\x1b[2K\x1b[90mReconnecting to ${pane.title}…\x1b[0m` : `\x1b[90mConnecting to ${pane.title}…\x1b[0m\r\n`)
 
-  let { username, password } = sessionId ? typedLogin(sessionId) : ({} as { username?: string; password?: string })
+  let { username, password, credentialId } = sessionId ? typedLogin(sessionId) : ({} as ReturnType<typeof typedLogin>)
   let typed: LoginAnswer | undefined
   let secretName = 'Password'
 
   // Keys and agents can fall back to the local account name like ssh does; a password can't.
   const start = session()
-  if (start?.type === 'ssh' && !start.username && !username && (start.auth || 'password') === 'password') {
-    typed = (await promptLogin({ title: `Login for ${pane.title}`, username: '', askPassword: password === undefined && !start.hasSecret })) ?? undefined
+  if (start?.type === 'ssh' && !start.username && !username && !credentialId && (start.auth || 'password') === 'password') {
+    typed = (await promptLogin({ title: `Login for ${pane.title}`, username: '', askPassword: password === undefined && !start.hasSecret, ssh: true })) ?? undefined
     if (!typed) return fail('Cancelled')
     if (!findPane(paneId)) return
     username = typed.username
-    password = typed.password ?? password
+    credentialId = typed.credentialId
+    password = credentialId ? typed.password : (typed.password ?? password)
   }
 
   for (let attempt = 0; ; attempt++) {
     try {
-      const res = await api.openConn({ sessionId, username, password, cols: entry.term.cols, rows: entry.term.rows })
+      const res = await api.openConn({ sessionId, username, password, credentialId, cols: entry.term.cols, rows: entry.term.rows })
       if (!findPane(paneId)) {
         api.closeConn(res.connId) // pane closed while connecting
         return
@@ -743,23 +765,28 @@ export async function connectPane(paneId: string, auto = false): Promise<void> {
       const viaJump = msg.startsWith('Jump host')
       const needsPassphrase = !viaJump && isPassphraseError(msg)
       const rejected = !viaJump && !needsPassphrase && isAuthError(msg)
-      if (rejected && session()?.auth === 'key') return fail('Authentication failed: the server did not accept this key.')
+      // The session's own key: nothing to type would help. A credential picked here can be swapped.
+      if (rejected && session()?.auth === 'key' && !credentialId) return fail('Authentication failed: the server did not accept this key.')
       if ((rejected || needsPassphrase) && sessionId && attempt < 3) {
         const known = session()
-        const wrong = needsPassphrase ? /bad passphrase/i.test(msg) : password !== undefined || Boolean(known?.hasSecret)
+        const usedKey = useStore.getState().credentials.find((c) => c.id === credentialId)?.kind === 'key'
+        const wrong = needsPassphrase ? /bad passphrase/i.test(msg) : credentialId !== undefined || password !== undefined || Boolean(known?.hasSecret)
         const account = username ?? known?.username ?? ''
         forgetTypedPassword(sessionId)
         secretName = needsPassphrase ? 'Passphrase' : 'Password'
         const answer = await promptLogin({
           title: `${secretName} for ${pane.title}`,
           secretName,
-          hint: !wrong ? undefined : needsPassphrase ? 'Wrong passphrase. Try again.' : 'The server rejected the login. Try again.',
+          hint: !wrong ? undefined : needsPassphrase ? 'Wrong passphrase. Try again.' : usedKey ? 'The server did not accept this key. Try again.' : 'The server rejected the login. Try again.',
           // After a rejection the username may be what's wrong, so it can be fixed here too.
-          username: rejected && (wrong || !account) ? account : undefined
+          username: rejected && (wrong || !account) ? account : undefined,
+          ssh: known?.type === 'ssh'
         })
         if (answer && !findPane(paneId)) return
         if (answer) {
-          typed = answer
+          // A passphrase is for the key of the credential in use, which stays.
+          if (!needsPassphrase) credentialId = answer.credentialId
+          typed = { ...answer, credentialId: answer.credentialId ?? (needsPassphrase ? credentialId : undefined) }
           username = answer.username ?? username
           password = answer.password
           continue

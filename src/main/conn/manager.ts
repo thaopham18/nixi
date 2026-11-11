@@ -4,8 +4,8 @@ import { StringDecoder } from 'string_decoder'
 import type { WebContents } from 'electron'
 import type { Client, ClientChannel, SFTPWrapper } from 'ssh2'
 import * as pty from '@lydell/node-pty'
-import type { OpenConnRequest, OpenConnResult, Session } from '@shared/types'
-import { getSession, sessionSecret, touchSession } from '../store/stores'
+import type { OpenConnRequest, OpenConnResult, SecretSource, Session } from '@shared/types'
+import { credentialSecret, getSession, sessionSecret, touchSession, withCredential } from '../store/stores'
 import { connectSsh, targetFromSession, type SshTarget } from '../ssh/connect'
 import { connect as netConnect, type Socket } from 'net'
 import { AutoLogin, TelnetClient } from '../telnet/protocol'
@@ -20,6 +20,8 @@ interface Conn {
   sftp?: Promise<SFTPWrapper>
   /** exec channel running STATS_SCRIPT, while the renderer shows the stats bar */
   stats?: ClientChannel
+  /** the saved session it was opened from */
+  sessionId?: string
 }
 
 const conns = new Map<string, Conn>()
@@ -169,8 +171,10 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
   const id = randomUUID()
   let conn: Conn
   let isSsh = true
-  const session = req.sessionId ? getSession(req.sessionId) : undefined
-  if (req.sessionId && !session) throw new Error('Session not found')
+  const found = req.sessionId ? getSession(req.sessionId) : undefined
+  if (req.sessionId && !found) throw new Error('Session not found')
+  // A credential picked in the login dialog: for this connection only, unless the user saved it.
+  const session = found && withCredential(found, req.credentialId)
   const title = session?.name ?? 'Local shell'
   if (!session || session.type === 'local') {
     isSsh = false
@@ -197,6 +201,7 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
     throw new Error('RDP and VNC sessions are not terminals')
   }
   if (session) touchSession(session.id)
+  conn.sessionId = session?.id
   conns.set(id, conn)
   emit('conn:status', { connId: id, state: 'connected' })
   return { connId: id, title, sessionId: req.sessionId, isSsh }
@@ -204,6 +209,25 @@ export async function openConn(req: OpenConnRequest): Promise<OpenConnResult> {
 
 export function writeConn(id: string, data: string): void {
   conns.get(id)?.write(data)
+}
+
+/**
+ * Answer a password prompt (sudo, su, mysql…) with a saved secret, typed here so the renderer never
+ * holds it. A session's own password only goes to that session's connections; a credential is
+ * meant for anywhere, and the renderer can read it already.
+ */
+export function typeSecret(id: string, from: SecretSource): void {
+  const conn = conns.get(id)
+  if (!conn) throw new Error('Not connected')
+  let secret: string | undefined
+  if (from.credentialId) secret = credentialSecret(from.credentialId)
+  else if (from.sessionId) {
+    if (from.sessionId !== conn.sessionId) throw new Error("A session's password only goes to that session")
+    const session = getSession(from.sessionId)
+    secret = session && sessionSecret(session)
+  }
+  if (!secret) throw new Error('No saved password')
+  conn.write(secret + '\r')
 }
 
 export function resizeConn(id: string, cols: number, rows: number): void {

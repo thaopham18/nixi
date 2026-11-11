@@ -96,7 +96,7 @@ export function PromptDialog(): JSX.Element | null {
   const okButton = useRef<HTMLButtonElement>(null)
   const [checked, setChecked] = useState(false)
   const saved = useStore((s) => s.credentials)
-  const credentials = prompt?.credentials ? saved.filter((c) => c.kind === 'password') : []
+  const credentials = prompt?.credentials ? saved.filter((c) => c.kind === 'password' || prompt.keys) : []
   const [picked, setPicked] = useState<Credential>()
   useEffect(() => {
     setValue(prompt?.value ?? '')
@@ -118,10 +118,15 @@ export function PromptDialog(): JSX.Element | null {
     const credential = credentials.find((c) => c.id === id)
     setPicked(credential)
     if (!credential) return
-    const secret = await api.credentialSecret(id)
     if (credential.username) setUsername(credential.username)
+    // A key logs in by itself: there is no password to fill or type.
+    if (credential.kind === 'key') {
+      setValue('')
+      return void setTimeout(() => (asksUser && !credential.username ? userInput : okButton).current?.focus(), 0)
+    }
+    const secret = await api.credentialSecret(id)
     setValue(secret ?? '')
-    setTimeout(() => (secret ? okButton : input).current?.focus(), 0)
+    setTimeout(() => (secret || !prompt.password ? okButton : input).current?.focus(), 0)
   }
   const submitUser = (): void => {
     if (username.trim() && prompt.password && !value) input.current?.focus()
@@ -152,7 +157,14 @@ export function PromptDialog(): JSX.Element | null {
               </option>
             ))}
           </select>
-          {picked?.username && !asksUser && <span className="muted small">Logs in as {picked.username}</span>}
+          {picked?.kind === 'key' ? (
+            <span className="muted small">
+              Logs in with the key {picked.privateKeyPath || 'in ~/.ssh'}
+              {picked.hasSecret ? ' (passphrase saved)' : ''}
+            </span>
+          ) : (
+            picked?.username && !asksUser && <span className="muted small">Logs in as {picked.username}</span>
+          )}
         </label>
       )}
       {asksUser && (
@@ -172,7 +184,7 @@ export function PromptDialog(): JSX.Element | null {
           />
         </label>
       )}
-      {(!asksUser || prompt.password) && (
+      {(!asksUser || prompt.password) && picked?.kind !== 'key' && (
         <label className="field">
           {prompt.label && <span>{prompt.label}</span>}
           <input

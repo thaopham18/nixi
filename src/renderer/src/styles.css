@@ -2095,6 +2095,31 @@ input.recording-key {
   font-size: 11px;
   opacity: 0.6;
 }
+/* Saved passwords at a password prompt: a key instead of a number, a line before the macros. */
+.macro-picker-item.secret {
+  align-items: center;
+}
+.macro-picker-item.secret .num {
+  display: inline-flex;
+  justify-content: flex-end;
+}
+.macro-picker-item.secret .num .tool-ico {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+.macro-picker-item.secret + .macro-picker-item:not(.secret) {
+  margin-top: 5px;
+  position: relative;
+}
+.macro-picker-item.secret + .macro-picker-item:not(.secret)::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -3px;
+  border-top: 1px solid var(--line);
+}
 .macro-picker-empty {
   padding: 6px 8px;
   color: var(--muted);

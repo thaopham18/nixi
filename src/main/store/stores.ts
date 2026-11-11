@@ -85,6 +85,13 @@ function resolved(session: Session): Session {
   }
 }
 
+/** The session logging in with this credential instead of its own login, for one connection. */
+export function withCredential(session: Session, credentialId: string | undefined): Session {
+  if (!credentialId) return session
+  const linked = { ...session, credentialId }
+  return credentialOf(linked) ? resolved(linked) : session
+}
+
 /** What gets stored: a linked session keeps no login of its own, or it would go stale. */
 function stored(session: Session): Session {
   if (!credentialOf(session)) return session

@@ -56,6 +56,8 @@ export interface PromptRequest {
   username?: string
   /** offer the saved credentials: picking one fills the fields */
   credentials?: boolean
+  /** also offer key credentials (SSH): picking one logs in with its key, nothing to type */
+  keys?: boolean
   resolve: (v: string | null, checked: boolean, username?: string, credentialId?: string) => void
 }
 
@@ -116,7 +118,8 @@ interface State {
   searchOpen: boolean
   contextMenu?: { x: number; y: number; items: MenuItem[] }
   /** quick macro list opened at the terminal cursor (x/y = bottom-left of the cursor cell), or under a focused text field */
-  macroPicker?: { paneId?: string; field?: HTMLInputElement | HTMLTextAreaElement; x: number; y: number; lineHeight: number }
+  /** `asksSecret`: the terminal waits for a password, so saved ones are offered first */
+  macroPicker?: { paneId?: string; field?: HTMLInputElement | HTMLTextAreaElement; x: number; y: number; lineHeight: number; asksSecret?: boolean }
   prompt?: PromptRequest
   choice?: ChoiceRequest
   pasteReview?: PasteReview
@@ -382,6 +385,8 @@ export async function promptLogin(opts: {
   username?: string
   askPassword?: boolean
   secretName?: string
+  /** SSH: key credentials work here too, and a credential can stand in for a missing username */
+  ssh?: boolean
 }): Promise<LoginAnswer | null> {
   const asksSecret = opts.askPassword !== false
   const secret = opts.secretName ?? 'Password'
@@ -392,11 +397,16 @@ export async function promptLogin(opts: {
     hint: opts.hint,
     password: asksSecret,
     username: opts.username,
-    credentials: asksSecret && secret === 'Password',
+    // A passphrase belongs to the session's own key, so no credential stands in for it.
+    credentials: secret === 'Password' && (asksSecret || Boolean(opts.ssh)),
+    keys: opts.ssh,
     checkbox: `Save ${saved} (in the encrypted database)`
   })
   if (res.value === null) return null
-  return { username: res.username, password: asksSecret ? res.value : undefined, remember: res.checked, credentialId: res.credentialId }
+  const kind = useStore.getState().credentials.find((c) => c.id === res.credentialId)?.kind
+  // A key credential has nothing typed: its passphrase, if any, stays in main.
+  const password = asksSecret && kind !== 'key' ? res.value : undefined
+  return { username: res.username, password, remember: res.checked, credentialId: res.credentialId }
 }
 
 const waitingChoices: ChoiceRequest[] = []
