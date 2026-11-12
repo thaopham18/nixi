@@ -80,6 +80,7 @@ const api = {
   /** resolve to both lists: a session's login comes from its credential */
   saveCredential: (c: CredentialInput): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:save', c),
   deleteCredential: (id: string): Promise<{ credentials: Credential[]; sessions: Session[] }> => invoke('credentials:delete', id),
+  orderCredentials: (ids: string[]): Promise<Credential[]> => invoke('credentials:order', ids),
   credentialSecret: (id: string): Promise<string | undefined> => invoke('credentials:secret', id),
   commandHistory: (): Promise<Record<string, string[]>> => invoke('history:list'),
   rememberCommand: (key: string, command: string): Promise<void> => invoke('history:remember', key, command),

@@ -4,6 +4,7 @@ import { api, errorMessage, uid } from '../api'
 import { toast, useStore, confirmDelete } from '../store'
 import { Modal } from './Overlays'
 import { ToolIcon } from './Icons'
+import { useReorder } from './Reorder'
 
 const blank = (): CredentialInput => ({ id: uid(), name: '', username: '', kind: 'password' })
 
@@ -18,6 +19,15 @@ export function CredentialManager(): JSX.Element {
   const users = sessions.filter((s) => s.credentialId === form.id)
   // A session can't log in with a private key unless it is SSH.
   const blocked = form.kind === 'key' ? users.filter((s) => s.type !== 'ssh') : []
+
+  // Order = the order in the login dialog, the session dialog and the list at a password prompt.
+  const order = useReorder(credentials, (list) => {
+    useStore.setState({ credentials: list })
+    api.orderCredentials(list.map((c) => c.id)).then(
+      (res) => useStore.setState({ credentials: res }),
+      (err) => toast(errorMessage(err), true)
+    )
+  })
 
   const select = (c: Credential | CredentialInput): void => {
     setForm(c)
@@ -58,12 +68,17 @@ export function CredentialManager(): JSX.Element {
     <Modal title="Credentials" onClose={close} wide>
       <div className="macro-layout">
         <div className="macro-list">
-          {credentials.map((c) => (
-            <div key={c.id} data-nav tabIndex={0} className={`tree-row macro-row ${c.id === form.id ? 'selected' : ''}`} onClick={() => select(c)}>
-              <span className="tree-name">{c.name}</span>
-              {c.kind === 'key' && <span className="badge">key</span>}
-            </div>
-          ))}
+          {credentials.map((c, i) => {
+            const r = order.row(c, i)
+            return (
+              <div key={c.id} {...r} data-nav tabIndex={0} className={`tree-row macro-row ${c.id === form.id ? 'selected' : ''} ${r.className}`} onClick={() => select(c)}>
+                <span className="grip">⋮⋮</span>
+                <span className="tree-name">{c.name}</span>
+                {c.kind === 'key' && <span className="badge">key</span>}
+                {c.id === form.id && order.buttons(c, i)}
+              </div>
+            )
+          })}
           <button onClick={() => select(blank())}>
             <ToolIcon name="plus" />
             New credential

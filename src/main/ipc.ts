@@ -9,6 +9,7 @@ import { parseSshConfig, splitDomainUser } from '@shared/parse'
 import { setSecureInput } from './secure-input'
 import {
   credentialSecret,
+  orderCredentials,
   deleteCredential,
   deleteSession,
   getSession,
@@ -143,6 +144,7 @@ export function registerIpc(): void {
   handle('credentials:list', () => listCredentials())
   handle('credentials:save', (_e, c: CredentialInput) => ({ credentials: saveCredential(c), sessions: listSessions() }))
   handle('credentials:delete', (_e, id: string) => ({ credentials: deleteCredential(id), sessions: listSessions() }))
+  handle('credentials:order', (_e, ids: string[]) => orderCredentials(ids))
   handle('credentials:secret', (_e, id: string) => credentialSecret(id))
   handle('history:list', () => commandHistory())
   handle('history:remember', (_e, key: string, command: string) => rememberCommand(key, command))

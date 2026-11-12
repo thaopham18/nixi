@@ -145,6 +145,14 @@ export function saveCredential(input: CredentialInput): Credential[] {
   return listCredentials()
 }
 
+/** Put credentials in the order of `ids`; any not named keep their place at the end. */
+export function orderCredentials(ids: string[]): Credential[] {
+  const all = credentialStore.get()
+  const rank = new Map(ids.map((id, i) => [id, i]))
+  credentialStore.set([...all].sort((a, b) => (rank.get(a.id) ?? ids.length) - (rank.get(b.id) ?? ids.length)))
+  return listCredentials()
+}
+
 /** Merge credentials from an exported file, secrets not included: existing ones are left as they are. */
 export function importCredentials(list: Credential[]): void {
   const have = new Set(credentialStore.get().map((c) => c.id))
