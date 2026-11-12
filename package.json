@@ -1,7 +1,7 @@
 {
   "name": "nixi",
   "productName": "Nixi",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "MobaXterm-style remote client (SSH, SFTP, tunnels, macros) for macOS",
   "main": "out/main/index.js",
   "license": "MIT",
