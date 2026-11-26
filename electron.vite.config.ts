@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
@@ -9,6 +10,8 @@ export default defineConfig({
     resolve: { alias: { '@shared': resolve('src/shared') } },
     build: {
       rollupOptions: {
+        // Must run before ssh2 loads, and externals are required at the very top of the bundle.
+        output: { banner: readFileSync(resolve('src/main/ssh/dh-patch.cjs'), 'utf8') },
         input: {
           index: resolve('src/main/index.ts'),
           // RDP proxy runs in its own utilityProcess

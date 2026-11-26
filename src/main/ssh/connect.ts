@@ -4,6 +4,7 @@ import { Client, type ConnectConfig } from 'ssh2'
 import type { Session } from '@shared/types'
 import { getSession, sessionSecret } from '../store/stores'
 import { verifyHostKey } from '../store/known-hosts'
+import { LOGIN_TIMEOUT_SEC, SSH_ALGORITHMS, TCP_TIMEOUT_SEC, explainHandshakeError, explainTimeout } from './algorithms'
 
 export interface SshTarget {
   host: string
@@ -75,16 +76,31 @@ export async function connectSsh(target: SshTarget): Promise<{ client: Client; c
   }
 
   const client = new Client()
+  // Where the login got to, for the timeout message (ssh2's own only says "handshake").
+  const steps: string[] = []
+  let loggedIn = false
+  let askingHostKey = false
   const cfg: ConnectConfig = {
     host: target.host,
     port: target.port,
     username: target.username,
-    readyTimeout: 20000,
+    readyTimeout: LOGIN_TIMEOUT_SEC * 1000,
+    debug: (line: string) => {
+      if (loggedIn || /^Handshake: \((local|remote)\)/.test(line)) return
+      steps.push(line)
+      if (steps.length > 8) steps.shift()
+    },
     keepaliveInterval: (target.keepaliveSec ?? 30) * 1000,
     tryKeyboard: true,
+    algorithms: SSH_ALGORITHMS,
     agent: target.auth === 'agent' ? defaultAgent() : undefined,
     hostVerifier: (key: Buffer, verify: (ok: boolean) => void) => {
-      verifyHostKey(target.host, target.port, key).then(verify, () => verify(false))
+      askingHostKey = true
+      const answer = (ok: boolean): void => {
+        askingHostKey = false
+        verify(ok)
+      }
+      verifyHostKey(target.host, target.port, key).then(answer, () => answer(false))
     }
   } as ConnectConfig
   if (sock) cfg.sock = sock as ConnectConfig['sock']
@@ -107,11 +123,28 @@ export async function connectSsh(target: SshTarget): Promise<{ client: Client; c
   // ssh2 can emit several errors for one failed login; a missing listener crashes the main process.
   client.on('error', () => {})
   await new Promise<void>((resolve, reject) => {
-    client.once('ready', () => resolve())
+    let tcp = false
+    client.once('connect', () => (tcp = true))
+    const tcpTimer = setTimeout(() => {
+      if (tcp) return
+      chain.forEach((c) => c.end())
+      client.end()
+      reject(new Error(`Timed out connecting to ${target.host}:${target.port} (no answer in ${TCP_TIMEOUT_SEC} s)`))
+    }, TCP_TIMEOUT_SEC * 1000)
+    client.once('ready', () => {
+      loggedIn = true
+      steps.length = 0
+      clearTimeout(tcpTimer)
+      resolve()
+    })
+    client.once('close', () => clearTimeout(tcpTimer))
     client.once('close', () => reject(new Error('Authentication required: no password given')))
     client.once('error', (err) => {
       chain.forEach((c) => c.end())
       client.end()
+      clearTimeout(tcpTimer)
+      if (/^Handshake failed/.test(err.message)) err.message = explainHandshakeError(err.message)
+      else if (/^Timed out while waiting for handshake/.test(err.message)) err.message = explainTimeout(steps, askingHostKey)
       reject(err)
     })
     try {

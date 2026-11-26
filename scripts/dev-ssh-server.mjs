@@ -2,6 +2,7 @@
 // Supports: password auth, PTY shell, exec, SFTP (rooted at a folder), -L / -D (direct-tcpip), -R (tcpip-forward).
 //
 //   node scripts/dev-ssh-server.mjs [--port 2222] [--user test] [--password test] [--root <dir>] [--no-seed] [--authorized-key <file.pub>]
+//     [--kex a,b] [--cipher a,b] [--hmac a,b] [--host-key <file>]   (an old server: only these algorithms / this host key)
 import { existsSync, mkdirSync, readFileSync, writeFileSync, promises as fsp, openSync, closeSync, readSync, writeSync, fstatSync } from 'fs'
 import { createServer as netServer, connect as netConnect } from 'net'
 import { join, resolve, posix } from 'path'
@@ -33,7 +34,10 @@ if (!process.argv.includes('--no-seed')) {
 
 const keyFile = join(tmpdir(), 'nixi-dev-hostkey')
 if (!existsSync(keyFile)) writeFileSync(keyFile, utils.generateKeyPairSync('ed25519').private)
-const hostKey = readFileSync(keyFile)
+const hostKey = readFileSync(arg('host-key', keyFile))
+const only = (name) => arg(name) && arg(name).split(',')
+const algorithms = Object.fromEntries(['kex', 'cipher', 'hmac'].filter(only).map((n) => [n, only(n)]))
+if (arg('host-key')) algorithms.serverHostKey = [utils.parseKey(hostKey).type]
 
 const toLocal = (p) => join(ROOT, posix.normalize('/' + p).replace(/^\/+/, ''))
 const attrsOf = (st) => ({
@@ -123,8 +127,10 @@ function handleSftp(sftp) {
     )
 }
 
-new Server({ hostKeys: [hostKey] }, (client) => {
+new Server({ hostKeys: [hostKey], algorithms }, (client) => {
   const remoteServers = new Map()
+  // For tests: which algorithms the client and this server agreed on.
+  client.on('handshake', (n) => console.log(`handshake ${JSON.stringify({ kex: n.kex, hostKey: n.serverHostKey, cipher: n.cs.cipher, mac: n.cs.mac })}`))
   client
     .on('authentication', (ctx) => {
       if (ctx.username === USER && ctx.method === 'password' && ctx.password === PASSWORD) return void setTimeout(() => ctx.accept(), AUTH_DELAY)
